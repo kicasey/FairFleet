@@ -1,0 +1,6 @@
+@FairFleetAPI_HostAddress = http://localhost:5280
+
+GET {{FairFleetAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

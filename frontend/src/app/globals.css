@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #F4F7FA;
+  --color-foreground: #0A1628;
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-body);
+
+  /* Brand Colors - Primary */
+  --color-brand-blue: #2875F1;
+  --color-brand-dark-blue: #0C1464;
+  --color-brand-teal: #2196D4;
+
+  /* Brand Colors - Accent */
+  --color-brand-purple: #6050E8;
+  --color-brand-dark-purple: #551E5F;
+
+  /* Brand Colors - Pastels */
+  --color-brand-light-blue: #B5E4F3;
+  --color-brand-light-green: #E3F8E9;
+  --color-brand-light-pink: #F8E5DE;
+  --color-brand-light-purple: #D5D1F4;
+  --color-brand-light-yellow: #FEF8E5;
+  --color-brand-light-rose: #F0DCDE;
+
+  /* Brand Colors - Semantic */
+  --color-brand-green: #7CD092;
+  --color-brand-dark-green: #2D4637;
+  --color-brand-red: #FF4B4B;
+  --color-brand-pink: #FFBEB9;
+  --color-brand-dusty-rose: #CDAAAA;
+  --color-brand-yellow: #FFDC8C;
+  --color-brand-yellow-green: #696E28;
+  --color-brand-dark-burgundy: #7D283C;
+  --color-brand-dark-red: #FF4B4B;
+
+  /* Neutrals */
+  --color-ink: #0A1628;
+  --color-paper: #FFFFFF;
+  --color-off: #F4F7FA;
+  --color-subtle: #EBF1F7;
+  --color-border: #D4DDE8;
+  --color-muted: #6E8099;
+
+  /* Font families */
+  --font-display: var(--font-unbounded);
+  --font-body: var(--font-plus-jakarta-sans);
+
+  /* Border radius */
+  --radius-brand: 14px;
+  --radius-brand-sm: 8px;
+  --radius-pill: 100px;
+
+  /* Box shadows */
+  --shadow-card: 0 2px 16px rgba(10,22,40,0.05);
+  --shadow-card-hover: 0 4px 24px rgba(10,22,40,0.10);
+  --shadow-cta: 0 3px 12px rgba(40,117,241,0.25);
+}
+
+body {
+  background: var(--color-off);
+  color: var(--color-ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+/* Gradient utilities — v4: bright blue dominant */
+.gradient-primary {
+  background: linear-gradient(145deg, #0C1464 0%, #2875F1 40%, #6050E8 70%, #2196D4 100%);
+}
+
+.gradient-logo {
+  background: linear-gradient(90deg, #0C1464, #2875F1, #2196D4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-chart {
+  background: linear-gradient(90deg, #2875F1, #2196D4);
+}
+
+.gradient-quiz {
+  background: linear-gradient(90deg, #2875F1, #6050E8);
+}
+
+.gradient-rainbow {
+  background: linear-gradient(90deg, #B5E4F3, #2875F1, #6050E8, #FFBEB9, #F8E5DE);
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, rgba(124,208,146,0.08), rgba(33,150,212,0.04));
+}
+
+.gradient-pink-info {
+  background: linear-gradient(135deg, rgba(255,190,185,0.12), rgba(240,220,222,0.08));
+}
+
+.gradient-purple {
+  background: linear-gradient(135deg, rgba(96,80,232,0.08), rgba(213,209,244,0.06));
+}
+
+.gradient-pastel-blue {
+  background: linear-gradient(135deg, #B5E4F3 0%, #F4F7FA 100%);
+}
+
+.gradient-pastel-pink {
+  background: linear-gradient(135deg, #F8E5DE 0%, #F4F7FA 100%);
+}
+
+.gradient-pastel-green {
+  background: linear-gradient(135deg, #E3F8E9 0%, #F4F7FA 100%);
+}
+
+.gradient-pastel-purple {
+  background: linear-gradient(135deg, #D5D1F4 0%, #F4F7FA 100%);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-off);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
