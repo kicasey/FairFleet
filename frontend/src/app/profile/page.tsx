@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth, useUser } from '@clerk/nextjs';
+import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
@@ -120,6 +122,22 @@ const initialFolders: Folder[] = [
 /* ------------------------------------------------------------------ */
 
 export default function ProfilePage() {
+  const { getToken } = useAuth();
+  const { user: clerkUser, isLoaded } = useUser();
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    async function syncUser() {
+      try {
+        const token = await getToken();
+        await apiFetch('/user/profile', {}, token);
+      } catch (err) {
+        console.error('Failed to sync user:', err);
+      }
+    }
+    if (clerkUser) syncUser();
+  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>(initialLoyaltyStatuses);
   const [savedFlights] = useState<SavedFlight[]>(initialSavedFlights);
   const [folders, setFolders] = useState<Folder[]>(initialFolders);

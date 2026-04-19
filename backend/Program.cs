@@ -28,12 +28,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "https://new-guppy-98.clerk.accounts.dev";
+        options.Authority = "https://communal-hare-59.clerk.accounts.dev";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
             ValidateIssuer = true,
-            ValidIssuer = "https://new-guppy-98.clerk.accounts.dev",
+            ValidIssuer = "https://communal-hare-59.clerk.accounts.dev",
             NameClaimType = "sub",
         };
     });
@@ -66,7 +66,10 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
