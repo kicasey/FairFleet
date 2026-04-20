@@ -532,16 +532,16 @@ export default function ProfilePage() {
                         )}
                       </div>
                       <p className="text-xs text-muted font-body mt-0.5">
-                        {sf.flight.departureDate} &middot; {sf.flight.airline}
+                        {sf.departureDate?.toString() ?? sf.flight?.departureDate} &middot; {sf.airlineName ?? sf.flight?.airline}
                       </p>
                       <div className="flex items-center justify-between mt-1">
                         <span className="font-display font-bold text-brand-dark-blue text-sm">
-                          ${sf.flight.totalPrice}
+                          ${sf.totalPrice ?? sf.flight?.totalPrice}
                         </span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            openFlightDetail(sf.flight);
+                            if (sf.flight) openFlightDetail(sf.flight);
                           }}
                           className="text-[10px] text-brand-blue hover:text-brand-dark-blue font-body flex items-center gap-0.5"
                         >
