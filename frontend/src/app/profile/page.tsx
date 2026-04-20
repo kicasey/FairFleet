@@ -132,6 +132,8 @@ export default function ProfilePage() {
         const token = await getToken();
         const profile = await apiFetch<{ LoyaltyStatuses: LoyaltyStatus[] }>('/user/profile', {}, token);
         if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
+        const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
+        if (foldersData) setFolders(foldersData.map(f => ({ ...f, collaborators: [], flights: [] })));
       } catch (err) {
         console.error('Failed to sync user:', err);
       }
@@ -222,32 +224,48 @@ export default function ProfilePage() {
     setShowDetailModal(true);
   }
 
-  function createFolder() {
+  async function createFolder() {
     if (!newFolderName.trim()) return;
-    const folder: Folder = {
-      id: Date.now(),
-      name: newFolderName,
-      flightCount: 0,
-      collaborators: [],
-      shareToken: Math.random().toString(36).slice(2, 8),
-      flights: [],
-    };
-    setFolders((prev) => [...prev, folder]);
+    try {
+      const token = await getToken();
+      const saved = await apiFetch<Folder>('/folders', {
+        method: 'POST',
+        body: JSON.stringify({ name: newFolderName }),
+      }, token);
+      setFolders((prev) => [...prev, { ...saved, flightCount: 0, collaborators: [], flights: [] }]);
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+    }
     setNewFolderName('');
     setShowNewFolder(false);
   }
 
-  function deleteFolder(id: number) {
-    setFolders((prev) => prev.filter((f) => f.id !== id));
-    if (openFolder === id) setOpenFolder(null);
-    if (editingFolder === id) setEditingFolder(null);
+  async function deleteFolder(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${id}`, { method: 'DELETE' }, token);
+      setFolders((prev) => prev.filter((f) => f.id !== id));
+      if (openFolder === id) setOpenFolder(null);
+      if (editingFolder === id) setEditingFolder(null);
+    } catch (err) {
+      console.error('Failed to delete folder:', err);
+    }
   }
 
-  function saveEditFolder(id: number) {
+  async function saveEditFolder(id: number) {
     if (!editFolderName.trim()) return;
-    setFolders((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, name: editFolderName } : f)),
-    );
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: editFolderName }),
+      }, token);
+      setFolders((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, name: editFolderName } : f)),
+      );
+    } catch (err) {
+      console.error('Failed to update folder:', err);
+    }
     setEditingFolder(null);
   }
 

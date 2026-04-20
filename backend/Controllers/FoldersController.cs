@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
 using FairFleetAPI.Models;
+using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class FoldersController : ControllerBase
 {
@@ -19,7 +22,7 @@ public class FoldersController : ControllerBase
 
     private async Task<User?> GetCurrentUser()
     {
-        var clerkUserId = Request.Headers["X-Clerk-User-Id"].FirstOrDefault();
+        var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
