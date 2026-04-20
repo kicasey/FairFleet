@@ -125,12 +125,15 @@ export default function ProfilePage() {
   const { getToken } = useAuth();
   const { user: clerkUser, isLoaded } = useUser();
 
+  const [dbUser, setDbUser] = useState<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string } | null>(null);
+
   useEffect(() => {
     if (!isLoaded) return;
     async function syncUser() {
       try {
         const token = await getToken();
-        const profile = await apiFetch<{ LoyaltyStatuses: LoyaltyStatus[] }>('/user/profile', {}, token);
+        const profile = await apiFetch<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; LoyaltyStatuses: LoyaltyStatus[] }>('/user/profile', {}, token);
+        setDbUser(profile);
         if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
         const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
         if (foldersData) setFolders(foldersData.map(f => ({ ...f, collaborators: [], flights: [] })));
@@ -321,12 +324,12 @@ export default function ProfilePage() {
             {/* Profile header */}
             <div className="rounded-xl border border-border p-4 bg-[#F0DCDE]">
             <div className="flex items-center gap-4">
-              <UserAvatar name={mockUser.firstName} size="lg" />
+              <UserAvatar name={clerkUser?.firstName ?? 'User'} size="lg" />
               <div>
                 <p className="font-display font-bold text-lg text-ink">
-                  {mockUser.firstName} {mockUser.lastName}
+                  {clerkUser?.firstName} {clerkUser?.lastName}
                 </p>
-                <p className="text-sm text-muted font-body">{mockUser.email}</p>
+                <p className="text-sm text-muted font-body">{clerkUser?.primaryEmailAddress?.emailAddress ?? dbUser?.email}</p>
                 <p className="text-xs text-muted font-body mt-0.5">
                   Signed in &middot; Free account
                 </p>
@@ -349,7 +352,7 @@ export default function ProfilePage() {
 
               <div className="space-y-2.5">
                 <PrefRow icon={<MapPin size={14} />} label="Home airport">
-                  <Chip color="blue">{mockUser.homeAirportCode}</Chip>
+                  <Chip color="blue">{dbUser?.homeAirportCode ?? '—'}</Chip>
                 </PrefRow>
                 <PrefRow icon={<Briefcase size={14} />} label="Default class">
                   <Chip color="blue">Economy</Chip>
@@ -358,7 +361,7 @@ export default function ProfilePage() {
                   <Chip color="gray">Personal + Carry-on</Chip>
                 </PrefRow>
                 <PrefRow icon={<Bell size={14} />} label="Phone">
-                  <span className="text-sm font-body text-ink">{mockUser.phoneNumber}</span>
+                  <span className="text-sm font-body text-ink">{dbUser?.phoneNumber ?? '—'}</span>
                 </PrefRow>
                 <PrefRow icon={<Bell size={14} />} label="Price alerts">
                   <button
