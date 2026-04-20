@@ -134,8 +134,15 @@ export interface LoyaltyStatus {
 
 export interface SavedFlight {
   id: number;
-  flight: Flight;
+  flight?: Flight;
   route: string;
+  airlineName?: string;
+  airlineCode?: string;
+  departureDate?: string;
+  totalPrice?: number;
+  baseFare?: number;
+  bagFees?: number;
+  seatFees?: number;
   priceAlertEnabled: boolean;
   priceDropThreshold?: number;
   priceRiseThreshold?: number;
