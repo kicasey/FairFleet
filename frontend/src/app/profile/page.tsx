@@ -137,6 +137,8 @@ export default function ProfilePage() {
         if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
         const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
         if (foldersData) setFolders(foldersData.map(f => ({ ...f, collaborators: [], flights: [] })));
+        const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
+        if (savedData) setSavedFlights(savedData);
       } catch (err) {
         console.error('Failed to sync user:', err);
       }
@@ -144,9 +146,9 @@ export default function ProfilePage() {
     if (clerkUser) syncUser();
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>(initialLoyaltyStatuses);
-  const [savedFlights] = useState<SavedFlight[]>(initialSavedFlights);
-  const [folders, setFolders] = useState<Folder[]>(initialFolders);
+  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>([]);
+  const [savedFlights, setSavedFlights] = useState<SavedFlight[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   const [selectedSaved, setSelectedSaved] = useState<SavedFlight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
