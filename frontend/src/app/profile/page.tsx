@@ -130,7 +130,8 @@ export default function ProfilePage() {
     async function syncUser() {
       try {
         const token = await getToken();
-        await apiFetch('/user/profile', {}, token);
+        const profile = await apiFetch<{ LoyaltyStatuses: LoyaltyStatus[] }>('/user/profile', {}, token);
+        if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
       } catch (err) {
         console.error('Failed to sync user:', err);
       }
@@ -173,24 +174,41 @@ export default function ProfilePage() {
 
   /* ---- Handlers ---- */
 
-  function addLoyaltyStatus() {
+  async function addLoyaltyStatus() {
     if (!newAirline.trim() || !newTier.trim()) return;
-    const next: LoyaltyStatus = {
-      id: Date.now(),
-      airlineCode: newAirline.slice(0, 2).toUpperCase(),
-      airlineName: newAirline,
-      statusTier: newTier,
-      freeBags: newFreeBags,
-    };
-    setLoyaltyStatuses((prev) => [...prev, next]);
+    try {
+      const token = await getToken();
+      const airlines: Record<string, string> = {
+        'Delta Air Lines': 'DL', 'American Airlines': 'AA', 'United Airlines': 'UA',
+        'Southwest Airlines': 'WN', 'JetBlue Airways': 'B6', 'Alaska Airlines': 'AS',
+      };
+      const saved = await apiFetch<LoyaltyStatus>('/user/loyalty-status', {
+        method: 'POST',
+        body: JSON.stringify({
+          airlineCode: airlines[newAirline] ?? newAirline.slice(0, 2).toUpperCase(),
+          airlineName: newAirline,
+          statusTier: newTier,
+          freeBags: newFreeBags,
+        }),
+      }, token);
+      setLoyaltyStatuses((prev) => [...prev, saved]);
+    } catch (err) {
+      console.error('Failed to add loyalty status:', err);
+    }
     setNewAirline('');
     setNewTier('');
     setNewFreeBags(0);
     setShowLoyaltyForm(false);
   }
 
-  function removeLoyaltyStatus(id: number) {
-    setLoyaltyStatuses((prev) => prev.filter((s) => s.id !== id));
+  async function removeLoyaltyStatus(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/user/loyalty-status/${id}`, { method: 'DELETE' }, token);
+      setLoyaltyStatuses((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error('Failed to remove loyalty status:', err);
+    }
   }
 
   function selectSavedFlight(sf: SavedFlight) {
