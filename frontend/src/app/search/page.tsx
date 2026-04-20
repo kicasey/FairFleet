@@ -2,12 +2,14 @@
 
 import { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { SlidersHorizontal, ArrowUpDown, Plane } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import FlightCard from '@/components/FlightCard';
 import FlightDetailModal from '@/components/FlightDetailModal';
 import { dummyFlights } from '@/data/flights';
 import { Flight } from '@/lib/types';
+import { apiFetch } from '@/lib/api';
 
 type SortKey = 'price' | 'duration' | 'departure';
 
@@ -57,6 +59,7 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 }
 
 function SearchResults() {
+  const { getToken } = useAuth();
   const searchParams = useSearchParams();
   const from = searchParams.get('from') ?? '';
   const to = searchParams.get('to') ?? '';
@@ -140,13 +143,35 @@ function SearchResults() {
     return sorted;
   }, [filteredFlights, sortBy]);
 
-  const handleSave = (flight: Flight) => {
+  const handleSave = async (flight: Flight) => {
+    const alreadySaved = savedFlights.has(flight.id);
     setSavedFlights((prev) => {
       const next = new Set(prev);
       if (next.has(flight.id)) next.delete(flight.id);
       else next.add(flight.id);
       return next;
     });
+    if (!alreadySaved) {
+      try {
+        const token = await getToken();
+        await apiFetch('/saved-flights', {
+          method: 'POST',
+          body: JSON.stringify({
+            flightData: JSON.stringify(flight),
+            route: `${flight.origin} → ${flight.destination}`,
+            airlineCode: flight.airlineCode,
+            airlineName: flight.airline,
+            departureDate: flight.departureDate,
+            totalPrice: flight.totalPrice,
+            baseFare: flight.baseFare,
+            bagFees: flight.bagFees,
+            seatFees: flight.seatFees,
+          }),
+        }, token);
+      } catch (err) {
+        console.error('Failed to save flight:', err);
+      }
+    }
   };
 
   const sortLabel: Record<SortKey, string> = {
