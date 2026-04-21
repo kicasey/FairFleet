@@ -675,7 +675,25 @@ export default function ProfilePage() {
                     </button>
                   </div>
 
-                  <button className="w-full rounded-full bg-brand-blue text-white py-2.5 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors shadow-cta">
+                  <button
+                    onClick={async () => {
+                      if (!selectedSaved) return;
+                      try {
+                        const token = await getToken();
+                        await apiFetch(`/saved-flights/${selectedSaved.id}/alert`, {
+                          method: 'PUT',
+                          body: JSON.stringify({
+                            priceAlertEnabled: alertsOn,
+                            priceDropThreshold: alertDropBelow ? Number(alertDropBelow) : null,
+                            priceRiseThreshold: alertRiseAbove ? Number(alertRiseAbove) : null,
+                            alertFrequency: selectedSaved.alertFrequency ?? 'immediate',
+                          }),
+                        }, token);
+                      } catch (err) {
+                        console.error('Failed to save alert settings:', err);
+                      }
+                    }}
+                    className="w-full rounded-full bg-brand-blue text-white py-2.5 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors shadow-cta">
                     Save Alert Settings
                   </button>
                 </div>
