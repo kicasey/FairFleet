@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useMemo, Suspense } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { SlidersHorizontal, ArrowUpDown, Plane } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import FlightCard from '@/components/FlightCard';
 import FlightDetailModal from '@/components/FlightDetailModal';
-import { dummyFlights } from '@/data/flights';
 import { Flight } from '@/lib/types';
 import { apiFetch } from '@/lib/api';
 
@@ -68,12 +67,21 @@ function SearchResults() {
   const cabin = searchParams.get('cabin') ?? 'economy';
   const bags = searchParams.get('bags') ?? '0 bags';
 
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!from || !to) return;
+    setLoading(true);
+    apiFetch<{ flights: Flight[] }>(`/flights/search?from=${from}&to=${to}&departDate=${date}&cabinClass=${cabin}`)
+      .then((res) => setFlights(res.flights ?? []))
+      .catch((err) => console.error('Failed to fetch flights:', err))
+      .finally(() => setLoading(false));
+  }, [from, to, date, cabin]);
+
   const allAirlines = useMemo(
-    () =>
-      [...new Set(dummyFlights.map((f) => f.airline))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [],
+    () => [...new Set(flights.map((f) => f.airline))].sort((a, b) => a.localeCompare(b)),
+    [flights],
   );
 
   const [filters, setFilters] = useState<Filters>({
@@ -94,7 +102,7 @@ function SearchResults() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const filteredFlights = useMemo(() => {
-    return dummyFlights.filter((f) => {
+    return flights.filter((f) => {
       if (filters.priceMin && f.totalPrice < Number(filters.priceMin))
         return false;
       if (filters.priceMax && f.totalPrice > Number(filters.priceMax))
@@ -414,7 +422,11 @@ function SearchResults() {
             </div>
 
             {/* Flight cards */}
-            {sortedFlights.length > 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <p className="font-display text-muted text-sm animate-pulse">Searching flights...</p>
+              </div>
+            ) : sortedFlights.length > 0 ? (
               <div className="space-y-3">
                 {sortedFlights.map((flight, idx) => (
                   <div key={flight.id}>
