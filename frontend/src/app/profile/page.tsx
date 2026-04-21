@@ -50,7 +50,7 @@ export default function ProfilePage() {
         setDbUser(profile);
         if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
         const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
-        if (foldersData) setFolders(foldersData.map(f => ({ ...f, collaborators: [], flights: [] })));
+        if (foldersData) setFolders(foldersData);
         const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
         if (savedData) setSavedFlights(savedData);
       } catch (err) {
@@ -185,22 +185,53 @@ export default function ProfilePage() {
     setEditingFolder(null);
   }
 
-  function addCollaborator(folderId: number) {
+  async function addCollaborator(folderId: number) {
     if (!inviteEmail.trim()) return;
-    setFolders((prev) =>
-      prev.map((f) =>
-        f.id === folderId
-          ? {
-              ...f,
-              collaborators: [
-                ...f.collaborators,
-                { id: Date.now(), name: inviteEmail, permission: invitePermission },
-              ],
-            }
-          : f,
-      ),
-    );
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${folderId}/collaborators`, {
+        method: 'POST',
+        body: JSON.stringify({ email: inviteEmail, permission: invitePermission }),
+      }, token);
+      const refreshed = await apiFetch<{
+        id: number;
+        name: string;
+        shareToken: string;
+        isOwner?: boolean;
+        flights: Folder['flights'];
+        collaborators: Folder['collaborators'];
+      }>(`/folders/${folderId}`, {}, token);
+      setFolders((prev) =>
+        prev.map((f) =>
+          f.id === folderId
+            ? {
+                ...f,
+                name: refreshed.name,
+                shareToken: refreshed.shareToken,
+                collaborators: refreshed.collaborators,
+                flights: refreshed.flights,
+                flightCount: refreshed.flights.length,
+              }
+            : f,
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to invite collaborator:', err);
+    }
     setInviteEmail('');
+  }
+
+  async function assignSavedFlightToFolder(savedFlightId: number, folderId: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/saved-flights/${savedFlightId}/folder`, {
+        method: 'PUT',
+        body: JSON.stringify(folderId),
+      }, token);
+      setSavedFlights((prev) => prev.map((f) => (f.id === savedFlightId ? { ...f, folderId } : f)));
+    } catch (err) {
+      console.error('Failed to assign saved flight to folder:', err);
+    }
   }
 
   function copyShareLink(folder: Folder) {
@@ -449,15 +480,30 @@ export default function ProfilePage() {
                         <span className="font-display font-bold text-brand-dark-blue text-sm">
                           ${sf.totalPrice ?? sf.flight?.totalPrice}
                         </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (sf.flight) openFlightDetail(sf.flight);
-                          }}
-                          className="text-[10px] text-brand-blue hover:text-brand-dark-blue font-body flex items-center gap-0.5"
-                        >
-                          Details <ChevronRight size={10} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={sf.folderId ?? ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => assignSavedFlightToFolder(sf.id, Number(e.target.value))}
+                            className="rounded-md border border-border bg-paper px-2 py-1 text-[10px] font-body text-ink"
+                          >
+                            <option value="">No folder</option>
+                            {folders.map((folder) => (
+                              <option key={folder.id} value={folder.id}>
+                                {folder.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (sf.flight) openFlightDetail(sf.flight);
+                            }}
+                            className="text-[10px] text-brand-blue hover:text-brand-dark-blue font-body flex items-center gap-0.5"
+                          >
+                            Details <ChevronRight size={10} />
+                          </button>
+                        </div>
                       </div>
                     </button>
                   );

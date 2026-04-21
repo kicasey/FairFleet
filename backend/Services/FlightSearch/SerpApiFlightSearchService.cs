@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
+using FairFleetAPI.Models;
 
 namespace FairFleetAPI.Services.FlightSearch;
 
@@ -9,12 +11,14 @@ public class SerpApiFlightSearchService : IFlightSearchService
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SerpApiFlightSearchService> _logger;
+    private readonly AppDbContext _db;
 
-    public SerpApiFlightSearchService(HttpClient httpClient, IConfiguration configuration, ILogger<SerpApiFlightSearchService> logger)
+    public SerpApiFlightSearchService(HttpClient httpClient, IConfiguration configuration, ILogger<SerpApiFlightSearchService> logger, AppDbContext db)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _logger = logger;
+        _db = db;
     }
 
     public async Task<List<ApiFlightDto>> SearchAsync(FlightSearchDto dto, CancellationToken cancellationToken = default)
@@ -29,29 +33,40 @@ public class SerpApiFlightSearchService : IFlightSearchService
             ? DateTime.UtcNow.AddDays(14).ToString("yyyy-MM-dd")
             : dto.DepartDate!;
 
-        var url =
-            $"https://serpapi.com/search.json?engine=google_flights&type=2&departure_id={Uri.EscapeDataString(dto.From)}&arrival_id={Uri.EscapeDataString(dto.To)}&outbound_date={Uri.EscapeDataString(departDate)}&currency=USD&hl=en&api_key={Uri.EscapeDataString(apiKey)}";
+        var daysToQuery = BuildDepartDates(departDate, dto.FlexibleDates ? dto.FlexibleDays : 0);
+        var fareMaps = _db.AirlineFareClassMaps.ToList();
+        var allFlights = new List<ApiFlightDto>();
 
-        _logger.LogInformation("SerpAPI request: {From}->{To} on {Date}", dto.From, dto.To, departDate);
-        var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        foreach (var day in daysToQuery)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"SerpAPI error {(int)response.StatusCode}: {errorBody}");
-        }
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var type = dto.RoundTrip && !string.IsNullOrWhiteSpace(dto.ReturnDate) ? "1" : "2";
+            var returnQuery = type == "1"
+                ? $"&return_date={Uri.EscapeDataString(dto.ReturnDate!)}"
+                : string.Empty;
+            var url =
+                $"https://serpapi.com/search.json?engine=google_flights&type={type}&departure_id={Uri.EscapeDataString(dto.From)}&arrival_id={Uri.EscapeDataString(dto.To)}&outbound_date={Uri.EscapeDataString(day)}{returnQuery}&currency=USD&hl=en&api_key={Uri.EscapeDataString(apiKey)}";
 
-        var flights = new List<ApiFlightDto>();
-        if (doc.RootElement.TryGetProperty("best_flights", out var bestFlights))
-        {
-            flights.AddRange(ParseFlightGroup(bestFlights, dto, departDate));
-        }
-        if (doc.RootElement.TryGetProperty("other_flights", out var otherFlights))
-        {
-            flights.AddRange(ParseFlightGroup(otherFlights, dto, departDate));
+            _logger.LogInformation("SerpAPI request: {From}->{To} on {Date}", dto.From, dto.To, day);
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"SerpAPI error {(int)response.StatusCode}: {errorBody}");
+            }
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+            if (doc.RootElement.TryGetProperty("best_flights", out var bestFlights))
+            {
+                allFlights.AddRange(ParseFlightGroup(bestFlights, dto, day, fareMaps));
+            }
+            if (doc.RootElement.TryGetProperty("other_flights", out var otherFlights))
+            {
+                allFlights.AddRange(ParseFlightGroup(otherFlights, dto, day, fareMaps));
+            }
         }
 
+        var flights = allFlights;
         if (dto.MaxStops.HasValue)
         {
             flights = flights.Where(f => f.Stops <= dto.MaxStops.Value).ToList();
@@ -62,11 +77,26 @@ public class SerpApiFlightSearchService : IFlightSearchService
             var codes = dto.Airlines.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             flights = flights.Where(f => codes.Contains(f.AirlineCode, StringComparer.OrdinalIgnoreCase)).ToList();
         }
+        if (dto.MaxDuration.HasValue)
+        {
+            flights = flights.Where(f => f.DurationMinutes <= dto.MaxDuration.Value).ToList();
+        }
+        if (dto.MaxLayoverMinutes.HasValue)
+        {
+            flights = flights.Where(f => f.Layovers.All(l => l.DurationMinutes <= dto.MaxLayoverMinutes.Value)).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(dto.DepartureTimeBuckets))
+        {
+            var allowed = dto.DepartureTimeBuckets.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(v => v.ToLowerInvariant())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            flights = flights.Where(f => allowed.Contains(GetTimeBucket(f.DepartureTime))).ToList();
+        }
 
         return flights;
     }
 
-    private static IEnumerable<ApiFlightDto> ParseFlightGroup(JsonElement group, FlightSearchDto dto, string departDate)
+    private static IEnumerable<ApiFlightDto> ParseFlightGroup(JsonElement group, FlightSearchDto dto, string departDate, List<AirlineFareClassMap> fareMaps)
     {
         foreach (var item in group.EnumerateArray())
         {
@@ -129,8 +159,15 @@ public class SerpApiFlightSearchService : IFlightSearchService
                 ? totalDuration.GetInt32()
                 : segments.Sum(s => s.DurationMinutes);
             var stops = Math.Max(0, segments.Count - 1);
-            var baseFare = decimal.Round(price * 0.86m, 2);
+            var fareMap = ResolveFareMap(fareMaps, airlineCode, airline, dto.CabinClass, item);
+            var bags = BuildBagInfo(fareMap);
+            var checkedFeeEach = bags.Checked.Included ? 0m : bags.Checked.Fee;
+            var checkedCount = Math.Max(0, dto.CheckedBags);
+            var bagFees = decimal.Round((bags.CarryOn.Included ? 0m : bags.CarryOn.Fee) + (checkedFeeEach * checkedCount), 2);
+            var seatFees = fareMap.SeatSelectionIncluded ? 0m : 15m;
+            var baseFare = decimal.Round(price * 0.82m, 2);
             var taxes = decimal.Round(price - baseFare, 2);
+            var totalPrice = decimal.Round(baseFare + taxes + bagFees + seatFees, 2);
             var priceHistory = BuildPriceHistory(price);
             var stopCities = segments.Skip(1).Select(s => s.DepartureAirport).Distinct().ToList();
 
@@ -153,19 +190,15 @@ public class SerpApiFlightSearchService : IFlightSearchService
                 CabinClass: dto.CabinClass,
                 BaseFare: baseFare,
                 Taxes: taxes,
-                Bags: new ApiBagInfoDto(
-                    PersonalItem: new ApiBagOptionDto(true, 0m),
-                    CarryOn: new ApiBagOptionDto(true, 0m),
-                    Checked: new ApiBagOptionDto(false, 35m)
-                ),
-                BagFees: 0m,
-                SeatFees: 0m,
-                SeatSelectionIncluded: false,
-                TotalPrice: price,
-                FareClass: dto.CabinClass.Replace('_', ' '),
-                ProprietaryFareClass: item.TryGetProperty("type", out var type) ? type.GetString() ?? "Standard" : "Standard",
+                Bags: bags,
+                BagFees: bagFees,
+                SeatFees: seatFees,
+                SeatSelectionIncluded: fareMap.SeatSelectionIncluded,
+                TotalPrice: totalPrice,
+                FareClass: fareMap.StandardLabel,
+                ProprietaryFareClass: fareMap.ProprietaryTerm,
                 BookingUrl: "https://www.google.com/travel/flights",
-                MilesEquivalent: (int)Math.Round(price * 78),
+                MilesEquivalent: (int)Math.Round(totalPrice * 78),
                 StopCities: stopCities,
                 Segments: segments,
                 Layovers: new List<ApiLayoverDto>(),
@@ -254,5 +287,86 @@ public class SerpApiFlightSearchService : IFlightSearchService
         }
 
         return fallback;
+    }
+
+    private static List<string> BuildDepartDates(string baseDate, int flexDays)
+    {
+        if (!DateOnly.TryParse(baseDate, out var start))
+        {
+            return [baseDate];
+        }
+
+        var days = Math.Clamp(flexDays, 0, 3);
+        if (days == 0)
+        {
+            return [baseDate];
+        }
+
+        var list = new List<string>();
+        for (var i = -days; i <= days; i++)
+        {
+            list.Add(start.AddDays(i).ToString("yyyy-MM-dd"));
+        }
+        return list;
+    }
+
+    private static string GetTimeBucket(string departureTime)
+    {
+        var hour = 0;
+        if (TimeOnly.TryParse(departureTime, out var parsed))
+        {
+            hour = parsed.Hour;
+        }
+        else
+        {
+            var parts = departureTime.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 0 && int.TryParse(parts[0], out var h))
+            {
+                hour = h;
+            }
+        }
+
+        if (hour >= 6 && hour < 12) return "morning";
+        if (hour >= 12 && hour < 17) return "afternoon";
+        if (hour >= 17 && hour < 21) return "evening";
+        return "redeye";
+    }
+
+    private static AirlineFareClassMap ResolveFareMap(
+        List<AirlineFareClassMap> maps,
+        string airlineCode,
+        string airlineName,
+        string cabinClass,
+        JsonElement item)
+    {
+        var providerTerm = item.TryGetProperty("type", out var type) ? (type.GetString() ?? "Standard") : "Standard";
+        var mapped = maps.FirstOrDefault(m =>
+            m.AirlineCode.Equals(airlineCode, StringComparison.OrdinalIgnoreCase) &&
+            m.ProprietaryTerm.Equals(providerTerm, StringComparison.OrdinalIgnoreCase));
+        if (mapped is not null)
+        {
+            return mapped;
+        }
+
+        return new AirlineFareClassMap
+        {
+            AirlineCode = airlineCode,
+            AirlineName = airlineName,
+            ProprietaryTerm = providerTerm,
+            StandardLabel = cabinClass.Replace('_', ' '),
+            PersonalItemIncluded = true,
+            CarryOnIncluded = true,
+            CheckedBagIncluded = false,
+            SeatSelectionIncluded = false
+        };
+    }
+
+    private static ApiBagInfoDto BuildBagInfo(AirlineFareClassMap fareMap)
+    {
+        return new ApiBagInfoDto(
+            PersonalItem: new ApiBagOptionDto(fareMap.PersonalItemIncluded, fareMap.PersonalItemIncluded ? 0m : 20m),
+            CarryOn: new ApiBagOptionDto(fareMap.CarryOnIncluded, fareMap.CarryOnIncluded ? 0m : 35m),
+            Checked: new ApiBagOptionDto(fareMap.CheckedBagIncluded, fareMap.CheckedBagIncluded ? 0m : 40m)
+        );
     }
 }

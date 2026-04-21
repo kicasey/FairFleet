@@ -4,6 +4,7 @@ using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
 using FairFleetAPI.Services.FlightSearch;
 using System.Text.Json;
+using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
 
@@ -32,7 +33,17 @@ public class FlightsController : ControllerBase
         try
         {
             var flights = await _flightSearchService.SearchAsync(normalized, cancellationToken);
-            return Ok(new { flights, total = flights.Count, source = "serpapi" });
+            flights = await ApplyLoyaltyBenefitsAsync(flights, cancellationToken);
+            var flexibleDateOptions = normalized.FlexibleDates
+                ? flights
+                    .GroupBy(f => f.DepartureDate)
+                    .Select(g => new { date = g.Key, cheapestPrice = g.Min(x => x.TotalPrice) })
+                    .OrderBy(x => x.cheapestPrice)
+                    .Take(5)
+                    .ToList()
+                : [];
+
+            return Ok(new { flights, total = flights.Count, source = "serpapi", flexibleDateOptions });
         }
         catch (InvalidOperationException ex)
         {
@@ -121,7 +132,25 @@ public class FlightsController : ControllerBase
             .Select(p => new { p.Price, p.RecordedAt })
             .ToListAsync();
 
-        return Ok(history);
+        if (history.Count == 0)
+        {
+            return Ok(new { points = history, low = 0m, high = 0m, average = 0m, insight = "No historical data available yet." });
+        }
+
+        var low = history.Min(h => h.Price);
+        var high = history.Max(h => h.Price);
+        var avg = decimal.Round(history.Average(h => h.Price), 2);
+        var first = history.First().Price;
+        var last = history.Last().Price;
+        var delta = decimal.Round(last - first, 2);
+        var insight = delta switch
+        {
+            < 0 => $"Price has dropped ${Math.Abs(delta)} over the tracked period. Consider booking soon if this route is trending down.",
+            > 0 => $"Price has increased ${delta} over the tracked period. Watch alerts closely before it rises further.",
+            _ => "Price is stable over the tracked period."
+        };
+
+        return Ok(new { points = history, low, high, average = avg, insight });
     }
 
     [HttpGet("deals")]
@@ -179,8 +208,46 @@ public class FlightsController : ControllerBase
             To = dto.To.ToUpperInvariant(),
             CabinClass = cabin,
             DepartDate = depart,
-            Passengers = passengers
+            Passengers = passengers,
+            FlexibleDays = Math.Clamp(dto.FlexibleDays, 0, 3),
+            SortBy = string.IsNullOrWhiteSpace(dto.SortBy) ? "price" : dto.SortBy.ToLowerInvariant()
         };
+    }
+
+    private async Task<List<ApiFlightDto>> ApplyLoyaltyBenefitsAsync(List<ApiFlightDto> flights, CancellationToken cancellationToken)
+    {
+        var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(clerkUserId))
+        {
+            return flights;
+        }
+
+        var statuses = await _db.AirlineLoyaltyStatuses
+            .Where(s => s.User.ClerkUserId == clerkUserId)
+            .ToListAsync(cancellationToken);
+        if (statuses.Count == 0)
+        {
+            return flights;
+        }
+
+        return flights.Select(f =>
+        {
+            var status = statuses.FirstOrDefault(s => s.AirlineCode.Equals(f.AirlineCode, StringComparison.OrdinalIgnoreCase));
+            if (status is null || status.FreeBags <= 0)
+            {
+                return f;
+            }
+
+            var updatedBag = f.Bags with { Checked = new ApiBagOptionDto(true, 0m) };
+            var adjustedTotal = Math.Max(0m, f.TotalPrice - f.BagFees);
+            return f with
+            {
+                Bags = updatedBag,
+                BagFees = 0m,
+                TotalPrice = adjustedTotal,
+                FareClass = $"{f.FareClass} (loyalty perks)"
+            };
+        }).ToList();
     }
 
     private static readonly Dictionary<string, (string City, string Country, double Lat, double Lng, string Continent, string[] Tags, int Temp, string Condition)> DestinationMeta =

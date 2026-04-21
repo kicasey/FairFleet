@@ -62,6 +62,28 @@ const AIRLINE_LIST = [
 ];
 const MAX_LAYOVER_OPTIONS = ['Any', '2h', '4h', '6h', '8h'];
 
+function toBucket(label: string): string {
+  switch (label.toLowerCase()) {
+    case 'red-eye':
+      return 'redeye';
+    default:
+      return label.toLowerCase();
+  }
+}
+
+function toStopCount(value: string): number | undefined {
+  if (value === 'Nonstop') return 0;
+  if (value === '1 stop') return 1;
+  if (value === '2+ stops') return 2;
+  return undefined;
+}
+
+function toLayoverMinutes(value: string): number | undefined {
+  if (value === 'Any') return undefined;
+  const n = Number.parseInt(value.replace('h', ''), 10);
+  return Number.isFinite(n) ? n * 60 : undefined;
+}
+
 function AirportInput({
   value,
   onChange,
@@ -246,9 +268,21 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       if (normalizedTo) query.set('to', normalizedTo);
       if (departureDate) query.set('date', departureDate);
       if (roundTrip && returnDate) query.set('returnDate', returnDate);
+      query.set('roundTrip', String(roundTrip));
+      query.set('flexibleDates', String(flexible));
+      if (flexible) query.set('flexibleDays', '2');
       query.set('passengers', String(adults));
       query.set('cabin', selectedClasses[0]?.toLowerCase().replace(' ', '_') ?? 'economy');
       if (children > 0) query.set('children', String(children));
+      query.set('bags', selectedBags.map((b) => b.toLowerCase().replace('-', '_').replace(' ', '_')).join(','));
+      const checkedBags = selectedBags.filter((b) => b === 'Checked').length;
+      query.set('checkedBags', String(checkedBags));
+      const maxStopsCount = toStopCount(maxStops);
+      if (typeof maxStopsCount === 'number') query.set('maxStops', String(maxStopsCount));
+      if (preferredAirlines.length > 0) query.set('airlines', preferredAirlines.join(','));
+      if (departureTimes.length > 0) query.set('departureTimeBuckets', departureTimes.map(toBucket).join(','));
+      const maxLayoverMinutes = toLayoverMinutes(maxLayover);
+      if (typeof maxLayoverMinutes === 'number') query.set('maxLayoverMinutes', String(maxLayoverMinutes));
       router.push(`/search?${query.toString()}`);
     }
   }

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import Link from 'next/link';
 import {
   Sun,
   Cloud,
@@ -294,10 +295,13 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
                     </p>
                     <p className="text-[10px] font-body text-muted">{dest.flightTime} flight</p>
                   </div>
-                  <button className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md">
+                  <Link
+                    href={`/search?from=ATL&to=${dest.code}&passengers=1&cabin=economy`}
+                    className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md"
+                  >
                     <Plane className="h-3 w-3" />
                     View Flights
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}

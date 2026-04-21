@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using FairFleetAPI.Data;
 using FairFleetAPI.Services.FlightSearch;
+using FairFleetAPI.Services.Monitoring;
+using FairFleetAPI.Services.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +27,12 @@ else
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 builder.Services.AddHttpClient<IFlightSearchService, SerpApiFlightSearchService>();
+builder.Services.AddScoped<INotificationSender, NotificationSender>();
+var enableAlertMonitor = builder.Configuration.GetValue<bool>("Features:EnableAlertMonitor");
+if (enableAlertMonitor)
+{
+    builder.Services.AddHostedService<AlertMonitorService>();
+}
 
 // Clerk JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

@@ -146,4 +146,25 @@ public class SavedFlightsController : ControllerBase
 
         return NoContent();
     }
+
+    [HttpPut("{id}/folder")]
+    public async Task<ActionResult> MoveToFolder(int id, [FromBody] int? folderId)
+    {
+        var user = await GetCurrentUser();
+        if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
+
+        var flight = await _db.SavedFlights.FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+        if (flight == null) return NotFound();
+
+        if (folderId.HasValue)
+        {
+            var folder = await _db.Folders.FirstOrDefaultAsync(f => f.Id == folderId.Value && f.UserId == user.Id);
+            if (folder == null) return BadRequest(new { message = "Folder not found for user." });
+        }
+
+        flight.FolderId = folderId;
+        flight.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Saved flight folder updated.", flight.Id, flight.FolderId });
+    }
 }

@@ -43,14 +43,19 @@ public class FoldersController : ControllerBase
         if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
 
         var folders = await _db.Folders
-            .Where(f => f.UserId == user.Id)
+            .Where(f => f.UserId == user.Id || f.Collaborators.Any(c => c.UserId == user.Id))
             .Include(f => f.Flights)
+            .Include(f => f.Collaborators)
+                .ThenInclude(c => c.User)
             .Select(f => new
             {
                 f.Id,
                 f.Name,
                 f.ShareToken,
                 FlightCount = f.Flights.Count,
+                IsOwner = f.UserId == user.Id,
+                Collaborators = f.Collaborators.Select(c => new { c.Id, Name = c.User.Email, c.Permission }),
+                Flights = f.Flights.Select(fl => new { fl.Id, fl.Route, fl.AirlineName, fl.TotalPrice, fl.DepartureDate }),
                 f.CreatedAt
             })
             .ToListAsync();
@@ -68,15 +73,22 @@ public class FoldersController : ControllerBase
             .Include(f => f.Flights)
             .Include(f => f.Collaborators)
                 .ThenInclude(c => c.User)
-            .FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+            .FirstOrDefaultAsync(f => f.Id == id);
 
         if (folder == null) return NotFound();
+        var isOwner = folder.UserId == user.Id;
+        var isCollaborator = folder.Collaborators.Any(c => c.UserId == user.Id);
+        if (!isOwner && !isCollaborator)
+        {
+            return Forbid();
+        }
 
         return Ok(new
         {
             folder.Id,
             folder.Name,
             folder.ShareToken,
+            IsOwner = isOwner,
             Flights = folder.Flights.Select(fl => new
             {
                 fl.Id, fl.Route, fl.AirlineName, fl.TotalPrice, fl.DepartureDate
