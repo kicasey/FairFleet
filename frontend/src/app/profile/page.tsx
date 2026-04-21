@@ -177,6 +177,7 @@ export default function ProfilePage() {
 
   // Preferences
   const [alertsOn, setAlertsOn] = useState(true);
+  const [alertSaved, setAlertSaved] = useState(false);
   const [showEditPrefs, setShowEditPrefs] = useState(false);
 
   /* ---- Handlers ---- */
@@ -687,6 +688,8 @@ export default function ProfilePage() {
                             alertFrequency: selectedSaved.alertFrequency ?? 'immediate',
                           }),
                         }, token);
+                        setAlertSaved(true);
+                        setTimeout(() => setAlertSaved(false), 3000);
                       } catch (err) {
                         console.error('Failed to save alert settings:', err);
                       }
@@ -694,6 +697,11 @@ export default function ProfilePage() {
                     className="w-full rounded-full bg-brand-blue text-white py-2.5 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors shadow-cta">
                     Save Alert Settings
                   </button>
+                  {alertSaved && (
+                    <p className="text-center text-xs text-brand-dark-green font-body mt-2">
+                      Alert settings saved!
+                    </p>
+                  )}
                 </div>
               </>
             ) : (
