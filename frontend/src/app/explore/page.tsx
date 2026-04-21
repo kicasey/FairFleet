@@ -3,9 +3,9 @@
 import Navbar from '@/components/Navbar';
 import QuizFlow from '@/components/QuizFlow';
 import MapCursorEffect from '@/components/MapCursorEffect';
-import { fetchExploreDestinations } from '@/lib/api';
+import { fetchExploreDestinations, fetchFlights } from '@/lib/api';
 import { getDestinationPhotoSync } from '@/lib/unsplash';
-import { Destination } from '@/lib/types';
+import { Destination, Flight } from '@/lib/types';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   List,
@@ -61,6 +61,12 @@ const CONTINENT_POSITIONS: Record<
 };
 
 const ATL_COORDS: [number, number] = [-84.4277, 33.6407];
+
+function getTomorrowDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
 
 function priceTier(price: number): 'cheap' | 'mid' | 'expensive' {
   if (price < 250) return 'cheap';
@@ -135,6 +141,9 @@ export default function ExplorePage() {
   const [sortKey, setSortKey] = useState<SortKey>('cheapestPrice');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [selectedDest, setSelectedDest] = useState<Destination | null>(null);
+  const [selectedDestFlights, setSelectedDestFlights] = useState<Flight[]>([]);
+  const [isLoadingSelectedDestFlights, setIsLoadingSelectedDestFlights] = useState(false);
+  const [selectedDestFlightError, setSelectedDestFlightError] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const mapRef = useRef<HTMLDivElement>(null);
 
@@ -157,6 +166,32 @@ export default function ExplorePage() {
       )
       .catch((err) => console.error('Failed to load explore destinations:', err));
   }, []);
+
+  useEffect(() => {
+    if (!selectedDest) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedDestFlights([]);
+      setSelectedDestFlightError(null);
+      return;
+    }
+
+    setIsLoadingSelectedDestFlights(true);
+    setSelectedDestFlightError(null);
+
+    fetchFlights({
+      from: 'ATL',
+      to: selectedDest.code,
+      date: getTomorrowDate(),
+      cabinClass: 'economy',
+      passengers: 1,
+    })
+      .then((flights) => setSelectedDestFlights(flights.slice(0, 3)))
+      .catch((err) => {
+        setSelectedDestFlights([]);
+        setSelectedDestFlightError(err instanceof Error ? err.message : 'Unable to load live flights.');
+      })
+      .finally(() => setIsLoadingSelectedDestFlights(false));
+  }, [selectedDest]);
 
   const markerScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
   const labelScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
@@ -542,6 +577,46 @@ export default function ExplorePage() {
 
                       <div className="px-3 py-2 text-xs text-muted font-body">
                         Live fares from Google Flights. Current lowest starts at ${Math.round(selectedDest.cheapestPrice)}.
+                      </div>
+                      <div className="px-3 pb-2 pt-1">
+                        <p className="text-[10px] font-display font-semibold uppercase tracking-wide text-muted mb-1.5">
+                          Top Live Options
+                        </p>
+                        {isLoadingSelectedDestFlights && (
+                          <p className="text-[10px] font-body text-muted">Loading flights...</p>
+                        )}
+                        {!isLoadingSelectedDestFlights && selectedDestFlightError && (
+                          <p className="text-[10px] font-body text-brand-dark-burgundy">
+                            {selectedDestFlightError}
+                          </p>
+                        )}
+                        {!isLoadingSelectedDestFlights &&
+                          !selectedDestFlightError &&
+                          selectedDestFlights.length === 0 && (
+                            <p className="text-[10px] font-body text-muted">No live options found right now.</p>
+                          )}
+                        {!isLoadingSelectedDestFlights &&
+                          !selectedDestFlightError &&
+                          selectedDestFlights.length > 0 && (
+                            <div className="space-y-1.5">
+                              {selectedDestFlights.map((flight) => (
+                                <div
+                                  key={flight.id}
+                                  className="rounded-lg border border-subtle bg-off px-2 py-1.5 text-[10px] font-body text-ink"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold">{flight.airline}</span>
+                                    <span className="font-display font-bold text-brand-blue">
+                                      ${Math.round(flight.totalPrice)}
+                                    </span>
+                                  </div>
+                                  <div className="text-muted">
+                                    {flight.departureTime} to {flight.arrivalTime} · {flight.duration}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                       </div>
 
                       {/* CTA */}

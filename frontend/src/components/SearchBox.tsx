@@ -14,7 +14,7 @@ import {
   Plus,
   Minus,
 } from 'lucide-react';
-import { findAirport } from '@/data/airports';
+import { findAirport, getAirport } from '@/data/airports';
 import { airlines } from '@/data/airlines';
 import type { Airport } from '@/lib/types';
 
@@ -185,6 +185,7 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
   const [maxStops, setMaxStops] = useState('Any');
   const [preferredAirlines, setPreferredAirlines] = useState<string[]>([]);
   const [maxLayover, setMaxLayover] = useState('Any');
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -200,9 +201,29 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
   }, []);
 
   function handleSearch() {
+    const normalizedFrom = fromCode.trim().toUpperCase();
+    const normalizedTo = toCode.trim().toUpperCase();
+
+    if (!getAirport(normalizedFrom)) {
+      setSearchError('Enter a valid 3-letter departure airport code.');
+      return;
+    }
+
+    if (!getAirport(normalizedTo)) {
+      setSearchError('Enter a valid 3-letter destination airport code.');
+      return;
+    }
+
+    if (normalizedFrom === normalizedTo) {
+      setSearchError('Departure and destination airports must be different.');
+      return;
+    }
+
+    setSearchError(null);
+
     const params: SearchParams = {
-      from: fromCode,
-      to: toCode,
+      from: normalizedFrom,
+      to: normalizedTo,
       departureDate,
       returnDate,
       roundTrip,
@@ -221,8 +242,8 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       onSearch(params);
     } else {
       const query = new URLSearchParams();
-      if (fromCode) query.set('from', fromCode);
-      if (toCode) query.set('to', toCode);
+      if (normalizedFrom) query.set('from', normalizedFrom);
+      if (normalizedTo) query.set('to', normalizedTo);
       if (departureDate) query.set('date', departureDate);
       if (roundTrip && returnDate) query.set('returnDate', returnDate);
       query.set('passengers', String(adults));
@@ -243,33 +264,46 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
   /* ────── Compact variant for navbar embedding ────── */
   if (compact) {
     return (
-      <div className="flex items-center gap-2 rounded-full border border-border bg-off px-2 py-1">
-        <AirportInput
-          value={fromDisplay}
-          onChange={(code, display) => { setFromCode(code); setFromDisplay(display); }}
-          placeholder="From"
-          icon={PlaneTakeoff}
-        />
-        <AirportInput
-          value={toDisplay}
-          onChange={(code, display) => { setToCode(code); setToDisplay(display); }}
-          placeholder="To"
-          icon={PlaneLanding}
-        />
-        <input
-          type="date"
-          value={departureDate}
-          onChange={(e) => setDepartureDate(e.target.value)}
-          className="rounded-lg border border-border bg-paper px-2 py-1 text-xs font-body text-ink"
-        />
-        <button
-          onClick={handleSearch}
-          className="flex items-center gap-1 rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors shadow-cta"
-        >
-          <Search className="h-3 w-3" />
-          Search
-        </button>
-      </div>
+      <>
+        <div className="flex items-center gap-2 rounded-full border border-border bg-off px-2 py-1">
+          <AirportInput
+            value={fromDisplay}
+            onChange={(code, display) => {
+              setFromCode(code);
+              setFromDisplay(display);
+              setSearchError(null);
+            }}
+            placeholder="From"
+            icon={PlaneTakeoff}
+          />
+          <AirportInput
+            value={toDisplay}
+            onChange={(code, display) => {
+              setToCode(code);
+              setToDisplay(display);
+              setSearchError(null);
+            }}
+            placeholder="To"
+            icon={PlaneLanding}
+          />
+          <input
+            type="date"
+            value={departureDate}
+            onChange={(e) => setDepartureDate(e.target.value)}
+            className="rounded-lg border border-border bg-paper px-2 py-1 text-xs font-body text-ink"
+          />
+          <button
+            onClick={handleSearch}
+            className="flex items-center gap-1 rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors shadow-cta"
+          >
+            <Search className="h-3 w-3" />
+            Search
+          </button>
+        </div>
+        {searchError && (
+          <p className="mt-2 text-xs font-body text-brand-dark-burgundy">{searchError}</p>
+        )}
+      </>
     );
   }
 
@@ -302,7 +336,11 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
         {/* From */}
         <AirportInput
           value={fromDisplay}
-          onChange={(code, display) => { setFromCode(code); setFromDisplay(display); }}
+          onChange={(code, display) => {
+            setFromCode(code);
+            setFromDisplay(display);
+            setSearchError(null);
+          }}
           placeholder="From where?"
           icon={PlaneTakeoff}
         />
@@ -310,7 +348,11 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
         {/* To */}
         <AirportInput
           value={toDisplay}
-          onChange={(code, display) => { setToCode(code); setToDisplay(display); }}
+          onChange={(code, display) => {
+            setToCode(code);
+            setToDisplay(display);
+            setSearchError(null);
+          }}
           placeholder="To where?"
           icon={PlaneLanding}
         />
@@ -548,6 +590,9 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
         <Search className="h-4 w-4" />
         Search Flights
       </button>
+      {searchError && (
+        <p className="mt-2 text-center text-xs font-body text-brand-dark-burgundy">{searchError}</p>
+      )}
 
       {/* Airline logos row */}
       <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
