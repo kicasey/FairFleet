@@ -301,7 +301,7 @@ export default function ProfilePage() {
   /* ---- Derived data for price tracker ---- */
   const selectedFlight = selectedSaved?.flight ?? null;
   const priceHistory = selectedFlight?.priceHistory ?? [];
-  const currentPrice = selectedFlight?.totalPrice ?? 0;
+  const currentPrice = selectedSaved?.totalPrice ?? selectedFlight?.totalPrice ?? 0;
 
   const stats = priceHistory.length > 0
     ? {
@@ -564,22 +564,20 @@ export default function ProfilePage() {
               <h2 className="font-display font-bold text-sm text-ink">Price Tracker</h2>
             </div>
 
-            {selectedFlight ? (
+            {selectedSaved ? (
               <>
                 {/* Route header */}
                 <div>
                   <p className="font-display font-bold text-lg text-ink">
-                    {selectedSaved!.route}{' '}
+                    {selectedSaved.route}{' '}
                     <span className="font-body font-normal text-muted text-sm">
-                      &middot; {selectedFlight.departureDate.replace(/^2026-0?/, '').replace('-', '/')}
+                      &middot; {selectedSaved.departureDate?.toString() ?? selectedFlight?.departureDate ?? ''}
                     </span>
                   </p>
                   <p className="text-xs text-muted font-body mt-0.5">
-                    {selectedFlight.cabinClass === 'economy'
-                      ? 'Economy'
-                      : selectedFlight.cabinClass.replace('_', ' ')}{' '}
+                    {selectedFlight?.cabinClass === 'economy' ? 'Economy' : selectedFlight?.cabinClass?.replace('_', ' ') ?? ''}{' '}
                     &middot; 1 adult &middot;{' '}
-                    {selectedFlight.bags.checked.included ? '1 checked bag (free)' : 'No checked bag'}
+                    {selectedFlight?.bags?.checked?.included ? '1 checked bag (free)' : 'No checked bag'}
                   </p>
                 </div>
 
