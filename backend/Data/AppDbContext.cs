@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<FlightFeedItem> FlightFeedItems => Set<FlightFeedItem>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<AirlineFareClassMap> AirlineFareClassMaps => Set<AirlineFareClassMap>();
+    public DbSet<FlightSearchCacheEntry> FlightSearchCacheEntries => Set<FlightSearchCacheEntry>();
     
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,5 +38,12 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(f => f.AddresseeId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<FlightSearchCacheEntry>()
+            .HasIndex(c => c.CacheKey)
+            .IsUnique();
+
+        builder.Entity<FlightSearchCacheEntry>()
+            .HasIndex(c => c.ExpiresAt);
     }
 }

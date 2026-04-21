@@ -26,96 +26,7 @@ import Navbar from '@/components/Navbar';
 import PriceChart from '@/components/PriceChart';
 import UserAvatar from '@/components/UserAvatar';
 import FlightDetailModal from '@/components/FlightDetailModal';
-import { dummyFlights } from '@/data/flights';
 import type { Flight, SavedFlight, Folder, LoyaltyStatus } from '@/lib/types';
-
-/* ------------------------------------------------------------------ */
-/*  Mock data                                                          */
-/* ------------------------------------------------------------------ */
-
-const mockUser = {
-  email: 'kate@example.com',
-  firstName: 'Kate',
-  lastName: 'Casey',
-  homeAirportCode: 'ATL',
-  defaultCabinClass: 'economy' as const,
-  defaultBags: { personal: true, carryon: true, checked: 0 },
-  phoneNumber: '(404) 555-0123',
-};
-
-const initialLoyaltyStatuses: LoyaltyStatus[] = [
-  {
-    id: 1,
-    airlineCode: 'DL',
-    airlineName: 'Delta Air Lines',
-    statusTier: 'Gold Medallion',
-    freeBags: 1,
-  },
-];
-
-const initialSavedFlights: SavedFlight[] = [
-  {
-    id: 1,
-    flight: dummyFlights[4],
-    route: `${dummyFlights[4].origin} → ${dummyFlights[4].destination}`,
-    priceAlertEnabled: true,
-    priceDropThreshold: 300,
-    priceRiseThreshold: 400,
-    alertFrequency: 'immediate',
-    priceChange: { amount: 18, direction: 'down' },
-  },
-  {
-    id: 2,
-    flight: dummyFlights[0],
-    route: `${dummyFlights[0].origin} → ${dummyFlights[0].destination}`,
-    priceAlertEnabled: true,
-    alertFrequency: 'daily',
-    priceChange: { amount: 25, direction: 'up' },
-  },
-  {
-    id: 3,
-    flight: dummyFlights[10],
-    route: `${dummyFlights[10].origin} → ${dummyFlights[10].destination}`,
-    priceAlertEnabled: false,
-    alertFrequency: 'weekly',
-    priceChange: { amount: 42, direction: 'down' },
-  },
-  {
-    id: 4,
-    flight: dummyFlights[3],
-    route: `${dummyFlights[3].origin} → ${dummyFlights[3].destination}`,
-    priceAlertEnabled: true,
-    alertFrequency: 'immediate',
-    priceChange: { amount: 8, direction: 'up' },
-  },
-  {
-    id: 5,
-    flight: dummyFlights[8],
-    route: `${dummyFlights[8].origin} → ${dummyFlights[8].destination}`,
-    priceAlertEnabled: false,
-    alertFrequency: 'weekly',
-    priceChange: { amount: 31, direction: 'down' },
-  },
-];
-
-const initialFolders: Folder[] = [
-  {
-    id: 1,
-    name: 'Spring Break 2026',
-    flightCount: 3,
-    collaborators: [{ id: 2, name: 'Sarah M.', permission: 'edit' }],
-    shareToken: 'abc123',
-    flights: [],
-  },
-  {
-    id: 2,
-    name: 'Summer Europe',
-    flightCount: 2,
-    collaborators: [],
-    shareToken: 'def456',
-    flights: [],
-  },
-];
 
 /* ------------------------------------------------------------------ */
 /*  Page component                                                     */
@@ -126,6 +37,9 @@ export default function ProfilePage() {
   const { user: clerkUser, isLoaded } = useUser();
 
   const [dbUser, setDbUser] = useState<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string } | null>(null);
+  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>([]);
+  const [savedFlights, setSavedFlights] = useState<SavedFlight[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -145,10 +59,6 @@ export default function ProfilePage() {
     }
     if (clerkUser) syncUser();
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>([]);
-  const [savedFlights, setSavedFlights] = useState<SavedFlight[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
 
   const [selectedSaved, setSelectedSaved] = useState<SavedFlight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);

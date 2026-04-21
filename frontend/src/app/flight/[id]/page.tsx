@@ -17,7 +17,7 @@ import Navbar from '@/components/Navbar';
 import PriceChart from '@/components/PriceChart';
 import BagIndicator from '@/components/BagIndicator';
 import ShareButton from '@/components/ShareButton';
-import { getFlightById } from '@/data/flights';
+import { fetchFlightById } from '@/lib/api';
 import { getAirline, getFareClassesForAirline } from '@/data/airlines';
 import type { Flight } from '@/lib/types';
 
@@ -69,12 +69,9 @@ export default function FlightDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    const result = getFlightById(id);
-    if (result) {
-      setFlight(result);
-    } else {
-      setNotFound(true);
-    }
+    fetchFlightById(id)
+      .then((result) => setFlight(result))
+      .catch(() => setNotFound(true));
   }, [id]);
 
   if (notFound) {

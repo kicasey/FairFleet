@@ -79,6 +79,7 @@ function AirportInput({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery(value);
   }, [value]);
 
@@ -108,6 +109,15 @@ function AirportInput({
     setOpen(false);
   }
 
+  function commitManualAirport(raw: string) {
+    const cleaned = raw.trim().toUpperCase();
+    if (!cleaned) return;
+    const code = cleaned.split(/[\s-]+/)[0];
+    if (/^[A-Z]{3}$/.test(code)) {
+      onChange(code, code);
+    }
+  }
+
   return (
     <div ref={ref} className="relative">
       <div className="flex items-center gap-2 rounded-xl border border-border bg-off px-3 py-2.5 focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-light-blue/30 transition-all">
@@ -117,6 +127,13 @@ function AirportInput({
           value={query}
           onChange={(e) => handleInput(e.target.value)}
           onFocus={() => query.length >= 1 && setOpen(true)}
+          onBlur={(e) => commitManualAirport(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commitManualAirport(query);
+              setOpen(false);
+            }
+          }}
           placeholder={placeholder}
           className="w-full bg-transparent text-sm font-body text-ink placeholder:text-muted outline-none"
         />
@@ -206,9 +223,10 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       const query = new URLSearchParams();
       if (fromCode) query.set('from', fromCode);
       if (toCode) query.set('to', toCode);
-      if (departureDate) query.set('dep', departureDate);
-      if (roundTrip && returnDate) query.set('ret', returnDate);
-      query.set('adults', String(adults));
+      if (departureDate) query.set('date', departureDate);
+      if (roundTrip && returnDate) query.set('returnDate', returnDate);
+      query.set('passengers', String(adults));
+      query.set('cabin', selectedClasses[0]?.toLowerCase().replace(' ', '_') ?? 'economy');
       if (children > 0) query.set('children', String(children));
       router.push(`/search?${query.toString()}`);
     }

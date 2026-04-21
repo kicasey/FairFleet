@@ -3,12 +3,13 @@
 import Navbar from '@/components/Navbar';
 import SearchBox from '@/components/SearchBox';
 import QuizFlow from '@/components/QuizFlow';
-import { destinations } from '@/data/flights';
+import { fetchExploreDestinations } from '@/lib/api';
 import { getDestinationPhotoSync } from '@/lib/unsplash';
+import type { Destination } from '@/lib/types';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Plane } from 'lucide-react';
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const cardGradients = [
   'from-brand-dark-blue to-brand-blue',
@@ -23,6 +24,7 @@ const cardGradients = [
 
 export default function Home() {
   const [mode, setMode] = useState<'destination' | 'quiz'>('destination');
+  const [deals, setDeals] = useState<Destination[]>([]);
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -31,7 +33,11 @@ export default function Home() {
   const planeY = useTransform(scrollYProgress, [0, 1], [0, 120]);
   const planeX = useTransform(scrollYProgress, [0, 1], [0, -60]);
 
-  const deals = destinations.slice(0, 8);
+  useEffect(() => {
+    fetchExploreDestinations('ATL')
+      .then((data) => setDeals(data.slice(0, 8)))
+      .catch((err) => console.error('Failed to load explore destinations:', err));
+  }, []);
 
   return (
     <div className="min-h-screen bg-off">
@@ -93,7 +99,7 @@ export default function Home() {
           {deals.map((dest, i) => (
             <Link
               key={dest.code}
-              href={`/search?to=${dest.code}`}
+              href={`/search?from=ATL&to=${dest.code}`}
               className="group rounded-xl overflow-hidden bg-paper border border-border hover:-translate-y-1 transition-transform duration-200 shadow-sm hover:shadow-md"
             >
               {/* Photo + gradient overlay */}
@@ -109,7 +115,7 @@ export default function Home() {
                 />
                 {/* Weather badge */}
                 <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-[#FEF8E5] px-3 py-1 text-xs font-body font-medium text-ink">
-                  {dest.weather.temp}°F {dest.weather.condition}
+                  {dest.weather?.temp ?? 72}°F {dest.weather?.condition ?? 'Clear'}
                 </div>
                 {/* IATA overlay */}
                 <span className="absolute bottom-2 left-3 z-10 font-display font-black text-[40px] leading-none text-white/60">
@@ -123,7 +129,7 @@ export default function Home() {
                   {dest.city}
                 </p>
                 <p className="font-display font-bold text-brand-blue mt-1">
-                  From ${dest.cheapestPrice}
+                  From ${Math.round(dest.cheapestPrice)}
                 </p>
                 <p className="text-xs text-muted mt-1">
                   Carry-on incl. · Nonstop

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using FairFleetAPI.Data;
+using FairFleetAPI.Services.FlightSearch;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,7 @@ else
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+builder.Services.AddHttpClient<IFlightSearchService, SerpApiFlightSearchService>();
 
 // Clerk JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

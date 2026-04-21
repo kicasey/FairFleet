@@ -1,3 +1,5 @@
+import type { Destination, Flight } from '@/lib/types';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 export async function apiFetch<T>(
@@ -25,4 +27,34 @@ export async function apiFetch<T>(
   }
 
   return res.json();
+}
+
+export async function fetchFlights(params: {
+  from: string;
+  to: string;
+  date?: string;
+  cabinClass?: string;
+  passengers?: number;
+}): Promise<Flight[]> {
+  const query = new URLSearchParams({
+    from: params.from,
+    to: params.to,
+    departDate: params.date || '',
+    cabinClass: params.cabinClass || 'economy',
+    passengers: String(params.passengers ?? 1),
+  });
+  const res = await apiFetch<{ flights: Flight[]; source?: string }>(`/flights/search?${query.toString()}`);
+  if (res.source) {
+    console.info(`Flight data source: ${res.source}`);
+  }
+  return res.flights ?? [];
+}
+
+export async function fetchExploreDestinations(from = 'ATL'): Promise<Destination[]> {
+  const res = await apiFetch<{ destinations: Destination[] }>(`/flights/explore?from=${from}`);
+  return res.destinations ?? [];
+}
+
+export async function fetchFlightById(id: string): Promise<Flight> {
+  return apiFetch<Flight>(`/flights/${id}`);
 }

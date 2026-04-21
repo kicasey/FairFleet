@@ -3,8 +3,7 @@
 import Navbar from '@/components/Navbar';
 import QuizFlow from '@/components/QuizFlow';
 import MapCursorEffect from '@/components/MapCursorEffect';
-import AirlineLogo from '@/components/AirlineLogo';
-import { destinations, dummyFlights } from '@/data/flights';
+import { fetchExploreDestinations } from '@/lib/api';
 import { getDestinationPhotoSync } from '@/lib/unsplash';
 import { Destination } from '@/lib/types';
 import { useState, useMemo, useRef, useEffect } from 'react';
@@ -127,6 +126,7 @@ function parseFlight(ft: string): number {
 }
 
 export default function ExplorePage() {
+  const [destinations, setDestinations] = useState<Destination[]>([]);
   const [view, setView] = useState<ViewMode>('map');
   const [dateFilter, setDateFilter] = useState('All Dates');
   const [classFilter, setClassFilter] = useState('Economy');
@@ -144,9 +144,19 @@ export default function ExplorePage() {
   });
 
   useEffect(() => {
-    const target = CONTINENT_POSITIONS[continent] ?? CONTINENT_POSITIONS.All;
-    setPosition({ coordinates: target.center, zoom: target.zoom });
-  }, [continent]);
+    fetchExploreDestinations('ATL')
+      .then((data) =>
+        setDestinations(
+          data.map((d) => ({
+            ...d,
+            flightTime: d.flightTime || 'N/A',
+            tags: Array.isArray(d.tags) ? d.tags : [],
+            weather: d.weather ?? { temp: 72, condition: 'Clear' },
+          })),
+        ),
+      )
+      .catch((err) => console.error('Failed to load explore destinations:', err));
+  }, []);
 
   const markerScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
   const labelScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
@@ -175,7 +185,7 @@ export default function ExplorePage() {
       result = result.filter((d) => d.cheapestPrice >= 300);
     }
     return result;
-  }, [continent, priceRange, dateFilter, classFilter]);
+  }, [destinations, continent, priceRange, dateFilter, classFilter]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -201,16 +211,7 @@ export default function ExplorePage() {
     return [...destinations]
       .sort((a, b) => a.cheapestPrice - b.cheapestPrice)
       .slice(0, 8);
-  }, []);
-
-  const flightsByDest = useMemo(() => {
-    const map: Record<string, typeof dummyFlights> = {};
-    for (const f of dummyFlights) {
-      if (!map[f.destination]) map[f.destination] = [];
-      map[f.destination].push(f);
-    }
-    return map;
-  }, []);
+  }, [destinations]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -315,6 +316,8 @@ export default function ExplorePage() {
                     active={continent === c}
                     onClick={() => {
                       setContinent(c);
+                      const target = CONTINENT_POSITIONS[c] ?? CONTINENT_POSITIONS.All;
+                      setPosition({ coordinates: target.center, zoom: target.zoom });
                       setSelectedDest(null);
                     }}
                   >
@@ -532,42 +535,19 @@ export default function ExplorePage() {
                             {selectedDest.city} ({selectedDest.code})
                           </h4>
                           <span className="text-[9px] text-white/70">
-                            {selectedDest.weather.temp}°F · {selectedDest.weather.condition} · {selectedDest.flightTime}
+                            {selectedDest.weather?.temp ?? 72}°F · {selectedDest.weather?.condition ?? 'Clear'} · {selectedDest.flightTime || 'N/A'}
                           </span>
                         </div>
                       </div>
 
-                      {/* Flight options */}
-                      <div className="divide-y divide-subtle">
-                        {(flightsByDest[selectedDest.code] ?? [])
-                          .slice(0, 3)
-                          .map((fl) => (
-                            <div
-                              key={fl.id}
-                              className="px-3 py-2 flex items-center justify-between"
-                            >
-                              <div className="flex items-center gap-2">
-                                <AirlineLogo iataCode={fl.airlineCode} airlineName={fl.airline} size={20} />
-                                <div>
-                                  <div className="text-[10px] font-semibold text-ink">{fl.airline} · {fl.duration}</div>
-                                  <div className="text-[9px] text-muted">{fl.stops === 0 ? 'Nonstop' : `${fl.stops} stop`}</div>
-                                </div>
-                              </div>
-                              <div className="font-display font-bold text-sm text-brand-dark-blue">${fl.totalPrice}</div>
-                            </div>
-                          ))}
-                        {(!flightsByDest[selectedDest.code] ||
-                          flightsByDest[selectedDest.code].length === 0) && (
-                          <p className="text-xs text-muted font-body px-3 py-2">
-                            From ${selectedDest.cheapestPrice}
-                          </p>
-                        )}
+                      <div className="px-3 py-2 text-xs text-muted font-body">
+                        Live fares from Google Flights. Current lowest starts at ${Math.round(selectedDest.cheapestPrice)}.
                       </div>
 
                       {/* CTA */}
                       <div className="px-3 py-2 text-center border-t border-subtle">
                         <Link
-                          href={`/search?to=${selectedDest.code}`}
+                          href={`/search?from=ATL&to=${selectedDest.code}`}
                           className="text-brand-blue font-semibold text-[10px] hover:underline"
                         >
                           See all flights to {selectedDest.city} →
@@ -600,7 +580,7 @@ export default function ExplorePage() {
                 {recommended.map((dest) => (
                   <Link
                     key={dest.code}
-                    href={`/search?to=${dest.code}`}
+                    href={`/search?from=ATL&to=${dest.code}`}
                     className="shrink-0 w-56 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                   >
                     <div
@@ -623,7 +603,7 @@ export default function ExplorePage() {
                       </p>
                       <div className="flex items-center justify-between mt-0.5">
                         <span className="text-[9px] font-body text-muted">
-                          {dest.flightTime} · {dest.tags[0]}
+                          {dest.flightTime || 'N/A'} · {dest.tags?.[0] ?? 'Popular'}
                         </span>
                       </div>
                       <p className="font-display font-extrabold text-sm text-brand-blue mt-1">
@@ -688,20 +668,8 @@ export default function ExplorePage() {
                         const tier = priceTier(dest.cheapestPrice);
                         const tierText = TIER_TEXT_CLASS[tier];
                         const tierDot = TIER_DOT_CLASS[tier];
-                        const flights = flightsByDest[dest.code] ?? [];
-                        const airlines = [
-                          ...new Set(flights.map((f) => f.airlineCode)),
-                        ].join(', ') || '—';
-                        const minStops =
-                          flights.length > 0
-                            ? Math.min(...flights.map((f) => f.stops))
-                            : 0;
-                        const stopWord =
-                          minStops > 1 ? 'stops' : 'stop';
-                        const stopsLabel =
-                          minStops === 0
-                            ? 'Nonstop'
-                            : `${minStops} ${stopWord}`;
+                        const airlines = 'Live search';
+                        const stopsLabel = 'Varies';
                         const rowBg = i % 2 === 0 ? 'bg-paper' : 'bg-off';
 
                         return (
@@ -748,7 +716,7 @@ export default function ExplorePage() {
                             </td>
                             <td className="px-4 py-3.5">
                               <Link
-                                href={`/search?to=${dest.code}`}
+                                href={`/search?from=ATL&to=${dest.code}`}
                                 className="rounded-full bg-brand-blue px-3 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors inline-flex items-center gap-1"
                               >
                                 <Plane className="h-3 w-3" />

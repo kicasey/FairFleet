@@ -8,7 +8,7 @@ import Navbar from '@/components/Navbar';
 import FlightCard from '@/components/FlightCard';
 import FlightDetailModal from '@/components/FlightDetailModal';
 import { Flight } from '@/lib/types';
-import { apiFetch } from '@/lib/api';
+import { fetchFlights } from '@/lib/api';
 
 type SortKey = 'price' | 'duration' | 'departure';
 
@@ -60,10 +60,10 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 function SearchResults() {
   const { getToken } = useAuth();
   const searchParams = useSearchParams();
-  const from = searchParams.get('from') ?? '';
+  const from = searchParams.get('from') ?? 'ATL';
   const to = searchParams.get('to') ?? '';
-  const date = searchParams.get('date') ?? '';
-  const passengers = searchParams.get('passengers') ?? '1';
+  const date = searchParams.get('date') ?? searchParams.get('dep') ?? '';
+  const passengers = searchParams.get('passengers') ?? searchParams.get('adults') ?? '1';
   const cabin = searchParams.get('cabin') ?? 'economy';
   const bags = searchParams.get('bags') ?? '0 bags';
 
@@ -72,12 +72,19 @@ function SearchResults() {
 
   useEffect(() => {
     if (!from || !to) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    apiFetch<{ flights: Flight[] }>(`/flights/search?from=${from}&to=${to}&departDate=${date}&cabinClass=${cabin}`)
-      .then((res) => setFlights(res.flights ?? []))
+    fetchFlights({
+      from,
+      to,
+      date,
+      cabinClass: cabin,
+      passengers: Number(passengers),
+    })
+      .then((res) => setFlights(res ?? []))
       .catch((err) => console.error('Failed to fetch flights:', err))
       .finally(() => setLoading(false));
-  }, [from, to, date, cabin]);
+  }, [from, to, date, cabin, passengers]);
 
   const allAirlines = useMemo(
     () => [...new Set(flights.map((f) => f.airline))].sort((a, b) => a.localeCompare(b)),
@@ -130,7 +137,7 @@ function SearchResults() {
 
       return true;
     });
-  }, [filters]);
+  }, [flights, filters]);
 
   const sortedFlights = useMemo(() => {
     const sorted = [...filteredFlights];
