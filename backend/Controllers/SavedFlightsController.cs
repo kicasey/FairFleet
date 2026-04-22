@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
 using FairFleetAPI.Models;
+using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/saved-flights")]
 public class SavedFlightsController : ControllerBase
 {
@@ -19,7 +22,7 @@ public class SavedFlightsController : ControllerBase
 
     private async Task<User?> GetCurrentUser()
     {
-        var clerkUserId = Request.Headers["X-Clerk-User-Id"].FirstOrDefault();
+        var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
@@ -142,5 +145,26 @@ public class SavedFlightsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    [HttpPut("{id}/folder")]
+    public async Task<ActionResult> MoveToFolder(int id, [FromBody] SavedFlightFolderDto dto)
+    {
+        var user = await GetCurrentUser();
+        if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
+
+        var flight = await _db.SavedFlights.FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+        if (flight == null) return NotFound();
+
+        if (dto.FolderId.HasValue)
+        {
+            var folder = await _db.Folders.FirstOrDefaultAsync(f => f.Id == dto.FolderId.Value && f.UserId == user.Id);
+            if (folder == null) return BadRequest(new { message = "Folder not found for user." });
+        }
+
+        flight.FolderId = dto.FolderId;
+        flight.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Saved flight folder updated.", flight.Id, flight.FolderId });
     }
 }

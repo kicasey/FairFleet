@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using FairFleetAPI.Data;
+using FairFleetAPI.Services.FlightSearch;
+using FairFleetAPI.Services.Monitoring;
+using FairFleetAPI.Services.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,17 +26,25 @@ else
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+builder.Services.AddHttpClient<IFlightSearchService, SerpApiFlightSearchService>();
+builder.Services.AddScoped<INotificationSender, NotificationSender>();
+builder.Services.AddMemoryCache();
+var enableAlertMonitor = builder.Configuration.GetValue<bool>("Features:EnableAlertMonitor");
+if (enableAlertMonitor)
+{
+    builder.Services.AddHostedService<AlertMonitorService>();
+}
 
 // Clerk JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "https://new-guppy-98.clerk.accounts.dev";
+        options.Authority = "https://communal-hare-59.clerk.accounts.dev";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
             ValidateIssuer = true,
-            ValidIssuer = "https://new-guppy-98.clerk.accounts.dev",
+            ValidIssuer = "https://communal-hare-59.clerk.accounts.dev",
             NameClaimType = "sub",
         };
     });
@@ -61,12 +72,21 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();

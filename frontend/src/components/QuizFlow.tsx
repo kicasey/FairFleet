@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import Link from 'next/link';
 import {
   Sun,
   Cloud,
@@ -26,7 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { destinations } from '@/data/flights';
+import { fetchExploreDestinations } from '@/lib/api';
 import type { Destination, QuizAnswer } from '@/lib/types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -179,6 +180,13 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
   const [direction, setDirection] = useState(1);
   const [answers, setAnswers] = useState<QuizAnswer>({});
   const [showResults, setShowResults] = useState(false);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+
+  useEffect(() => {
+    fetchExploreDestinations('ATL')
+      .then((data) => setDestinations(data))
+      .catch((err) => console.error('Failed to load quiz destinations:', err));
+  }, []);
 
   const currentQuestion = QUESTIONS[step];
   const progress = ((step + 1) / QUESTIONS.length) * 100;
@@ -214,7 +222,7 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
       .sort((a, b) => b.score - a.score)
       .slice(0, 6)
       .map((m) => m.dest);
-  }, [answers]);
+  }, [answers, destinations]);
 
   const previewDestinations = matchedDestinations.slice(0, 4);
   const answerKeys = Object.entries(answers) as [keyof QuizAnswer, string][];
@@ -287,10 +295,13 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
                     </p>
                     <p className="text-[10px] font-body text-muted">{dest.flightTime} flight</p>
                   </div>
-                  <button className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md">
+                  <Link
+                    href={`/search?from=ATL&to=${dest.code}&passengers=1&cabin=economy`}
+                    className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md"
+                  >
                     <Plane className="h-3 w-3" />
                     View Flights
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}

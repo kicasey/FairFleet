@@ -1,32 +1,51 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FairFleetAPI.Data;
 using FairFleetAPI.Models;
+using FairFleetAPI.Services.Notifications;
+using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class UserController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly INotificationSender _notifications;
 
-    public UserController(AppDbContext db)
+    public UserController(AppDbContext db, INotificationSender notifications)
     {
         _db = db;
+        _notifications = notifications;
     }
 
     private async Task<User?> GetCurrentUser()
     {
-        var clerkUserId = Request.Headers["X-Clerk-User-Id"].FirstOrDefault();
+        var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
+        var emailFromToken = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
         if (user == null)
         {
-            user = new User { ClerkUserId = clerkUserId };
+            user = new User { ClerkUserId = clerkUserId, Email = emailFromToken };
             _db.Users.Add(user);
             await _db.SaveChangesAsync();
+            await _notifications.SendWelcomeAsync(user, HttpContext.RequestAborted);
+        }
+        else if (!string.IsNullOrWhiteSpace(emailFromToken) && !string.Equals(user.Email, emailFromToken, StringComparison.OrdinalIgnoreCase))
+        {
+            var hadNoEmail = string.IsNullOrWhiteSpace(user.Email);
+            user.Email = emailFromToken;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            if (hadNoEmail)
+            {
+                await _notifications.SendWelcomeAsync(user, HttpContext.RequestAborted);
+            }
         }
 
         return user;
@@ -115,7 +134,7 @@ public class UserController : ControllerBase
         var status = await _db.AirlineLoyaltyStatuses
             .FirstOrDefaultAsync(s => s.Id == id && s.UserId == user.Id);
 
-        if (status == null) return NotFound();
+        if (status == null) return NotFound(new { message = "Loyalty status was not found for this account." });
 
         _db.AirlineLoyaltyStatuses.Remove(status);
         await _db.SaveChangesAsync();

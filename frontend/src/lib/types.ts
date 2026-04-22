@@ -97,6 +97,7 @@ export interface Destination {
   tags: string[];
   imageUrl?: string;
   continent: string;
+  origin?: string;
 }
 
 export interface FareClassMapping {
@@ -134,8 +135,15 @@ export interface LoyaltyStatus {
 
 export interface SavedFlight {
   id: number;
-  flight: Flight;
+  flight?: Flight;
   route: string;
+  airlineName?: string;
+  airlineCode?: string;
+  departureDate?: string;
+  totalPrice?: number;
+  baseFare?: number;
+  bagFees?: number;
+  seatFees?: number;
   priceAlertEnabled: boolean;
   priceDropThreshold?: number;
   priceRiseThreshold?: number;
@@ -148,6 +156,7 @@ export interface Folder {
   id: number;
   name: string;
   flightCount: number;
+  isOwner?: boolean;
   collaborators: { id: number; name: string; permission: 'view' | 'edit' }[];
   shareToken: string;
   flights: SavedFlight[];

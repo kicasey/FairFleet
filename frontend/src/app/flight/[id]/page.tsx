@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -17,7 +18,7 @@ import Navbar from '@/components/Navbar';
 import PriceChart from '@/components/PriceChart';
 import BagIndicator from '@/components/BagIndicator';
 import ShareButton from '@/components/ShareButton';
-import { getFlightById } from '@/data/flights';
+import { apiFetch, fetchFlightById } from '@/lib/api';
 import { getAirline, getFareClassesForAirline } from '@/data/airlines';
 import type { Flight } from '@/lib/types';
 
@@ -66,15 +67,15 @@ export default function FlightDetailPage() {
     'immediate' | 'daily' | 'weekly'
   >('immediate');
   const [isSaved, setIsSaved] = useState(false);
+  const [savedFlightId, setSavedFlightId] = useState<number | null>(null);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const { getToken } = useAuth();
 
   useEffect(() => {
     if (!id) return;
-    const result = getFlightById(id);
-    if (result) {
-      setFlight(result);
-    } else {
-      setNotFound(true);
-    }
+    fetchFlightById(id)
+      .then((result) => setFlight(result))
+      .catch(() => setNotFound(true));
   }, [id]);
 
   if (notFound) {
@@ -131,6 +132,60 @@ export default function FlightDetailPage() {
 
   const formatCabinClass = (cls: string) =>
     cls.replaceAll('_', ' ').replaceAll(/\b\w/g, (l) => l.toUpperCase());
+
+  async function ensureSavedFlight(): Promise<number> {
+    if (!flight) {
+      throw new Error('Flight details are not loaded yet.');
+    }
+    if (savedFlightId) {
+      return savedFlightId;
+    }
+    const token = await getToken();
+    const saved = await apiFetch<{ id: number }>('/saved-flights', {
+      method: 'POST',
+      body: JSON.stringify({
+        flightData: JSON.stringify(flight),
+        route: `${flight.origin} → ${flight.destination}`,
+        airlineCode: flight.airlineCode,
+        airlineName: flight.airline,
+        departureDate: flight.departureDate,
+        totalPrice: flight.totalPrice,
+        baseFare: flight.baseFare,
+        bagFees: flight.bagFees,
+        seatFees: flight.seatFees,
+      }),
+    }, token);
+    setSavedFlightId(saved.id);
+    setIsSaved(true);
+    return saved.id;
+  }
+
+  async function handleSave() {
+    try {
+      await ensureSavedFlight();
+    } catch (err) {
+      setAlertMessage(err instanceof Error ? err.message : 'Failed to save flight.');
+    }
+  }
+
+  async function handleSaveAlert() {
+    try {
+      const idToConfigure = await ensureSavedFlight();
+      const token = await getToken();
+      await apiFetch(`/saved-flights/${idToConfigure}/alert`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          priceAlertEnabled: true,
+          priceDropThreshold: priceDropThreshold ? Number(priceDropThreshold) : null,
+          priceRiseThreshold: priceRiseThreshold ? Number(priceRiseThreshold) : null,
+          alertFrequency,
+        }),
+      }, token);
+      setAlertMessage('Alert saved successfully.');
+    } catch (err) {
+      setAlertMessage(err instanceof Error ? err.message : 'Failed to save alert.');
+    }
+  }
 
   return (
     <>
@@ -355,7 +410,7 @@ export default function FlightDetailPage() {
                     ? 'bg-brand-blue/10 border border-brand-blue text-brand-blue'
                     : 'border border-brand-blue text-brand-blue hover:bg-brand-blue/5'
                 }`}
-                onClick={() => setIsSaved(!isSaved)}
+                onClick={handleSave}
               >
                 <Heart
                   size={14}
@@ -461,9 +516,15 @@ export default function FlightDetailPage() {
                           </div>
                         </div>
 
-                        <button className="w-full rounded-full bg-brand-blue text-white py-2 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors">
+                        <button
+                          onClick={handleSaveAlert}
+                          className="w-full rounded-full bg-brand-blue text-white py-2 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors"
+                        >
                           Save Alert
                         </button>
+                        {alertMessage && (
+                          <p className="text-xs text-muted">{alertMessage}</p>
+                        )}
                       </div>
                     </motion.div>
                   )}

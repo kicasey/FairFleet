@@ -1,6 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth, useUser } from '@clerk/nextjs';
+import { apiFetch } from '@/lib/api';
+import { airports } from '@/data/airports';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
@@ -24,105 +27,22 @@ import Navbar from '@/components/Navbar';
 import PriceChart from '@/components/PriceChart';
 import UserAvatar from '@/components/UserAvatar';
 import FlightDetailModal from '@/components/FlightDetailModal';
-import { dummyFlights } from '@/data/flights';
 import type { Flight, SavedFlight, Folder, LoyaltyStatus } from '@/lib/types';
-
-/* ------------------------------------------------------------------ */
-/*  Mock data                                                          */
-/* ------------------------------------------------------------------ */
-
-const mockUser = {
-  email: 'kate@example.com',
-  firstName: 'Kate',
-  lastName: 'Casey',
-  homeAirportCode: 'ATL',
-  defaultCabinClass: 'economy' as const,
-  defaultBags: { personal: true, carryon: true, checked: 0 },
-  phoneNumber: '(404) 555-0123',
-};
-
-const initialLoyaltyStatuses: LoyaltyStatus[] = [
-  {
-    id: 1,
-    airlineCode: 'DL',
-    airlineName: 'Delta Air Lines',
-    statusTier: 'Gold Medallion',
-    freeBags: 1,
-  },
-];
-
-const initialSavedFlights: SavedFlight[] = [
-  {
-    id: 1,
-    flight: dummyFlights[4],
-    route: `${dummyFlights[4].origin} → ${dummyFlights[4].destination}`,
-    priceAlertEnabled: true,
-    priceDropThreshold: 300,
-    priceRiseThreshold: 400,
-    alertFrequency: 'immediate',
-    priceChange: { amount: 18, direction: 'down' },
-  },
-  {
-    id: 2,
-    flight: dummyFlights[0],
-    route: `${dummyFlights[0].origin} → ${dummyFlights[0].destination}`,
-    priceAlertEnabled: true,
-    alertFrequency: 'daily',
-    priceChange: { amount: 25, direction: 'up' },
-  },
-  {
-    id: 3,
-    flight: dummyFlights[10],
-    route: `${dummyFlights[10].origin} → ${dummyFlights[10].destination}`,
-    priceAlertEnabled: false,
-    alertFrequency: 'weekly',
-    priceChange: { amount: 42, direction: 'down' },
-  },
-  {
-    id: 4,
-    flight: dummyFlights[3],
-    route: `${dummyFlights[3].origin} → ${dummyFlights[3].destination}`,
-    priceAlertEnabled: true,
-    alertFrequency: 'immediate',
-    priceChange: { amount: 8, direction: 'up' },
-  },
-  {
-    id: 5,
-    flight: dummyFlights[8],
-    route: `${dummyFlights[8].origin} → ${dummyFlights[8].destination}`,
-    priceAlertEnabled: false,
-    alertFrequency: 'weekly',
-    priceChange: { amount: 31, direction: 'down' },
-  },
-];
-
-const initialFolders: Folder[] = [
-  {
-    id: 1,
-    name: 'Spring Break 2026',
-    flightCount: 3,
-    collaborators: [{ id: 2, name: 'Sarah M.', permission: 'edit' }],
-    shareToken: 'abc123',
-    flights: [],
-  },
-  {
-    id: 2,
-    name: 'Summer Europe',
-    flightCount: 2,
-    collaborators: [],
-    shareToken: 'def456',
-    flights: [],
-  },
-];
 
 /* ------------------------------------------------------------------ */
 /*  Page component                                                     */
 /* ------------------------------------------------------------------ */
 
 export default function ProfilePage() {
-  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>(initialLoyaltyStatuses);
-  const [savedFlights] = useState<SavedFlight[]>(initialSavedFlights);
-  const [folders, setFolders] = useState<Folder[]>(initialFolders);
+  const { getToken } = useAuth();
+  const { user: clerkUser, isLoaded } = useUser();
+
+  const [dbUser, setDbUser] = useState<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; defaultBags?: string } | null>(null);
+  const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>([]);
+  const [savedFlights, setSavedFlights] = useState<SavedFlight[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
 
   const [selectedSaved, setSelectedSaved] = useState<SavedFlight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
@@ -151,28 +71,119 @@ export default function ProfilePage() {
 
   // Preferences
   const [alertsOn, setAlertsOn] = useState(true);
+  const [alertSaved, setAlertSaved] = useState(false);
   const [showEditPrefs, setShowEditPrefs] = useState(false);
+  const [prefsSaveMessage, setPrefsSaveMessage] = useState<string | null>(null);
+  const [prefHomeAirport, setPrefHomeAirport] = useState('');
+  const [prefDefaultClass, setPrefDefaultClass] = useState<'economy' | 'premium_economy' | 'business' | 'first'>('economy');
+  const [prefUsualBag, setPrefUsualBag] = useState<'personal_carryon' | 'checked' | 'personal_only'>('personal_carryon');
+  const [prefPhoneNumber, setPrefPhoneNumber] = useState('');
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    async function syncUser() {
+      try {
+        const token = await getToken();
+        const profile = await apiFetch<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; defaultBags?: string; loyaltyStatuses?: LoyaltyStatus[]; LoyaltyStatuses?: LoyaltyStatus[] }>('/user/profile', {}, token);
+        setDbUser(profile);
+        const statuses = profile.loyaltyStatuses ?? profile.LoyaltyStatuses ?? [];
+        setLoyaltyStatuses(statuses);
+        setPrefHomeAirport(profile.homeAirportCode ?? '');
+        setPrefDefaultClass((profile.defaultCabinClass as 'economy' | 'premium_economy' | 'business' | 'first') ?? 'economy');
+        setPrefPhoneNumber(profile.phoneNumber ?? '');
+        if (profile.defaultBags) {
+          try {
+            const bagPrefs = JSON.parse(profile.defaultBags) as { bag?: 'personal_carryon' | 'checked' | 'personal_only'; alertsOn?: boolean };
+            if (bagPrefs.bag) setPrefUsualBag(bagPrefs.bag);
+            if (typeof bagPrefs.alertsOn === 'boolean') setAlertsOn(bagPrefs.alertsOn);
+          } catch {
+            // ignore invalid bag pref payload
+          }
+        }
+        const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
+        if (foldersData) setFolders(foldersData);
+        const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
+        if (savedData) setSavedFlights(savedData);
+      } catch (err) {
+        console.error('Failed to sync user:', err);
+      }
+    }
+    if (clerkUser) syncUser();
+  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Handlers ---- */
 
-  function addLoyaltyStatus() {
+  async function addLoyaltyStatus() {
     if (!newAirline.trim() || !newTier.trim()) return;
-    const next: LoyaltyStatus = {
-      id: Date.now(),
-      airlineCode: newAirline.slice(0, 2).toUpperCase(),
-      airlineName: newAirline,
-      statusTier: newTier,
-      freeBags: newFreeBags,
-    };
-    setLoyaltyStatuses((prev) => [...prev, next]);
+    try {
+      const token = await getToken();
+      const airlines: Record<string, string> = {
+        'Delta Air Lines': 'DL', 'American Airlines': 'AA', 'United Airlines': 'UA',
+        'Southwest Airlines': 'WN', 'JetBlue Airways': 'B6', 'Alaska Airlines': 'AS',
+      };
+      const saved = await apiFetch<LoyaltyStatus>('/user/loyalty-status', {
+        method: 'POST',
+        body: JSON.stringify({
+          airlineCode: airlines[newAirline] ?? newAirline.slice(0, 2).toUpperCase(),
+          airlineName: newAirline,
+          statusTier: newTier,
+          freeBags: newFreeBags,
+        }),
+      }, token);
+      setLoyaltyStatuses((prev) => [...prev, saved]);
+    } catch (err) {
+      console.error('Failed to add loyalty status:', err);
+    }
     setNewAirline('');
     setNewTier('');
     setNewFreeBags(0);
     setShowLoyaltyForm(false);
   }
 
-  function removeLoyaltyStatus(id: number) {
-    setLoyaltyStatuses((prev) => prev.filter((s) => s.id !== id));
+  async function removeLoyaltyStatus(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/user/loyalty-status/${id}`, { method: 'DELETE' }, token);
+      setLoyaltyStatuses((prev) => prev.filter((s) => s.id !== id));
+      setLoyaltyError(null);
+    } catch (err) {
+      console.error('Failed to remove loyalty status:', err);
+      setLoyaltyError(err instanceof Error ? err.message : 'Failed to remove loyalty status.');
+    }
+  }
+
+  async function savePreferences() {
+    try {
+      const normalizedAirport = prefHomeAirport.trim().toUpperCase();
+      if (normalizedAirport && !airports.some((airport) => airport.code === normalizedAirport)) {
+        setPrefsSaveMessage('Please select a valid airport code from the list.');
+        return;
+      }
+      const token = await getToken();
+      await apiFetch('/user/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          homeAirportCode: normalizedAirport,
+          defaultCabinClass: prefDefaultClass,
+          phoneNumber: prefPhoneNumber.trim() || null,
+          defaultBags: JSON.stringify({
+            bag: prefUsualBag,
+            alertsOn,
+          }),
+        }),
+      }, token);
+      setDbUser((prev) => ({
+        ...(prev ?? {}),
+        homeAirportCode: normalizedAirport,
+        defaultCabinClass: prefDefaultClass,
+        phoneNumber: prefPhoneNumber.trim() || undefined,
+        defaultBags: JSON.stringify({ bag: prefUsualBag, alertsOn }),
+      }));
+      setPrefsSaveMessage('Preferences saved.');
+      setTimeout(() => setPrefsSaveMessage(null), 2500);
+    } catch (err) {
+      setPrefsSaveMessage(err instanceof Error ? err.message : 'Failed to save preferences.');
+    }
   }
 
   function selectSavedFlight(sf: SavedFlight) {
@@ -186,55 +197,120 @@ export default function ProfilePage() {
     setShowDetailModal(true);
   }
 
-  function createFolder() {
+  async function createFolder() {
     if (!newFolderName.trim()) return;
-    const folder: Folder = {
-      id: Date.now(),
-      name: newFolderName,
-      flightCount: 0,
-      collaborators: [],
-      shareToken: Math.random().toString(36).slice(2, 8),
-      flights: [],
-    };
-    setFolders((prev) => [...prev, folder]);
+    try {
+      const token = await getToken();
+      const saved = await apiFetch<Folder>('/folders', {
+        method: 'POST',
+        body: JSON.stringify({ name: newFolderName }),
+      }, token);
+      setFolders((prev) => [...prev, { ...saved, flightCount: 0, collaborators: [], flights: [] }]);
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+    }
     setNewFolderName('');
     setShowNewFolder(false);
   }
 
-  function deleteFolder(id: number) {
-    setFolders((prev) => prev.filter((f) => f.id !== id));
-    if (openFolder === id) setOpenFolder(null);
-    if (editingFolder === id) setEditingFolder(null);
+  async function deleteFolder(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${id}`, { method: 'DELETE' }, token);
+      setFolders((prev) => prev.filter((f) => f.id !== id));
+      if (openFolder === id) setOpenFolder(null);
+      if (editingFolder === id) setEditingFolder(null);
+    } catch (err) {
+      console.error('Failed to delete folder:', err);
+    }
   }
 
-  function saveEditFolder(id: number) {
+  async function removeSavedFlight(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/saved-flights/${id}`, { method: 'DELETE' }, token);
+      setSavedFlights((prev) => prev.filter((sf) => sf.id !== id));
+      if (selectedSaved?.id === id) {
+        setSelectedSaved(null);
+      }
+    } catch (err) {
+      console.error('Failed to remove saved flight:', err);
+    }
+  }
+
+  async function saveEditFolder(id: number) {
     if (!editFolderName.trim()) return;
-    setFolders((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, name: editFolderName } : f)),
-    );
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: editFolderName }),
+      }, token);
+      setFolders((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, name: editFolderName } : f)),
+      );
+    } catch (err) {
+      console.error('Failed to update folder:', err);
+    }
     setEditingFolder(null);
   }
 
-  function addCollaborator(folderId: number) {
+  async function addCollaborator(folderId: number) {
     if (!inviteEmail.trim()) return;
-    setFolders((prev) =>
-      prev.map((f) =>
-        f.id === folderId
-          ? {
-              ...f,
-              collaborators: [
-                ...f.collaborators,
-                { id: Date.now(), name: inviteEmail, permission: invitePermission },
-              ],
-            }
-          : f,
-      ),
-    );
+    try {
+      const token = await getToken();
+      await apiFetch(`/folders/${folderId}/collaborators`, {
+        method: 'POST',
+        body: JSON.stringify({ email: inviteEmail, permission: invitePermission }),
+      }, token);
+      const refreshed = await apiFetch<{
+        id: number;
+        name: string;
+        shareToken: string;
+        isOwner?: boolean;
+        flights: Folder['flights'];
+        collaborators: Folder['collaborators'];
+      }>(`/folders/${folderId}`, {}, token);
+      setFolders((prev) =>
+        prev.map((f) =>
+          f.id === folderId
+            ? {
+                ...f,
+                name: refreshed.name,
+                shareToken: refreshed.shareToken,
+                collaborators: refreshed.collaborators,
+                flights: refreshed.flights,
+                flightCount: refreshed.flights.length,
+              }
+            : f,
+        ),
+      );
+      setInviteError(null);
+    } catch (err) {
+      console.error('Failed to invite collaborator:', err);
+      setInviteError(err instanceof Error ? err.message : 'Failed to invite collaborator.');
+    }
     setInviteEmail('');
   }
 
+  async function assignSavedFlightToFolder(savedFlightId: number, folderId: number | null) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/saved-flights/${savedFlightId}/folder`, {
+        method: 'PUT',
+        body: JSON.stringify({ folderId }),
+      }, token);
+      setSavedFlights((prev) =>
+        prev.map((f) => (f.id === savedFlightId ? { ...f, folderId: folderId ?? undefined } : f)),
+      );
+    } catch (err) {
+      console.error('Failed to assign saved flight to folder:', err);
+    }
+  }
+
   function copyShareLink(folder: Folder) {
-    navigator.clipboard.writeText(`https://fairfleet.app/shared/${folder.shareToken}`);
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    navigator.clipboard.writeText(`${baseUrl}/shared/${folder.shareToken}`);
     setCopiedShareLink(folder.id);
     setTimeout(() => setCopiedShareLink(null), 2000);
   }
@@ -242,7 +318,7 @@ export default function ProfilePage() {
   /* ---- Derived data for price tracker ---- */
   const selectedFlight = selectedSaved?.flight ?? null;
   const priceHistory = selectedFlight?.priceHistory ?? [];
-  const currentPrice = selectedFlight?.totalPrice ?? 0;
+  const currentPrice = selectedSaved?.totalPrice ?? selectedFlight?.totalPrice ?? 0;
 
   const stats = priceHistory.length > 0
     ? {
@@ -267,12 +343,12 @@ export default function ProfilePage() {
             {/* Profile header */}
             <div className="rounded-xl border border-border p-4 bg-[#F0DCDE]">
             <div className="flex items-center gap-4">
-              <UserAvatar name={mockUser.firstName} size="lg" />
+              <UserAvatar name={clerkUser?.firstName ?? 'User'} size="lg" />
               <div>
                 <p className="font-display font-bold text-lg text-ink">
-                  {mockUser.firstName} {mockUser.lastName}
+                  {clerkUser?.firstName} {clerkUser?.lastName}
                 </p>
-                <p className="text-sm text-muted font-body">{mockUser.email}</p>
+                <p className="text-sm text-muted font-body">{clerkUser?.primaryEmailAddress?.emailAddress ?? dbUser?.email}</p>
                 <p className="text-xs text-muted font-body mt-0.5">
                   Signed in &middot; Free account
                 </p>
@@ -285,55 +361,140 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-sm text-ink">Preferences</h2>
                 <button
-                  onClick={() => setShowEditPrefs(!showEditPrefs)}
-                  className="flex items-center gap-1 text-xs text-brand-blue hover:text-brand-dark-blue font-body transition-colors"
+                  onClick={() => {
+                    setShowEditPrefs(!showEditPrefs);
+                    setPrefsSaveMessage(null);
+                  }}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-display font-bold transition-colors ${
+                    showEditPrefs
+                      ? 'bg-off text-muted hover:text-ink'
+                      : 'bg-brand-blue text-white hover:bg-brand-dark-blue'
+                  }`}
                 >
                   <Settings size={14} />
-                  Edit Preferences
+                  {showEditPrefs ? 'Done' : 'Edit Preferences'}
                 </button>
               </div>
 
-              <div className="space-y-2.5">
-                <PrefRow icon={<MapPin size={14} />} label="Home airport">
-                  <Chip color="blue">{mockUser.homeAirportCode}</Chip>
-                </PrefRow>
-                <PrefRow icon={<Briefcase size={14} />} label="Default class">
-                  <Chip color="blue">Economy</Chip>
-                </PrefRow>
-                <PrefRow icon={<Briefcase size={14} />} label="Usual bags">
-                  <Chip color="gray">Personal + Carry-on</Chip>
-                </PrefRow>
-                <PrefRow icon={<Bell size={14} />} label="Phone">
-                  <span className="text-sm font-body text-ink">{mockUser.phoneNumber}</span>
-                </PrefRow>
-                <PrefRow icon={<Bell size={14} />} label="Price alerts">
+              {showEditPrefs ? (
+                <div className="space-y-3 rounded-lg border border-border bg-off/40 p-3">
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Home airport</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ATL"
+                      value={prefHomeAirport}
+                      onChange={(e) => setPrefHomeAirport(e.target.value.toUpperCase())}
+                      list="home-airport-options"
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    />
+                  </label>
+                  <datalist id="home-airport-options">
+                    {airports.map((airport) => (
+                      <option
+                        key={airport.code}
+                        value={airport.code}
+                        label={`${airport.city} - ${airport.name}`}
+                      />
+                    ))}
+                  </datalist>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Default cabin class</span>
+                    <select
+                      value={prefDefaultClass}
+                      onChange={(e) => setPrefDefaultClass(e.target.value as 'economy' | 'premium_economy' | 'business' | 'first')}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    >
+                      <option value="economy">Economy</option>
+                      <option value="premium_economy">Premium Economy</option>
+                      <option value="business">Business</option>
+                      <option value="first">First</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Usual bags</span>
+                    <select
+                      value={prefUsualBag}
+                      onChange={(e) => setPrefUsualBag(e.target.value as 'personal_carryon' | 'checked' | 'personal_only')}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    >
+                      <option value="personal_carryon">Personal + Carry-on</option>
+                      <option value="checked">Checked bag</option>
+                      <option value="personal_only">Personal only</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Phone number</span>
+                    <input
+                      type="text"
+                      placeholder="+1 (555) 555-5555"
+                      value={prefPhoneNumber}
+                      onChange={(e) => setPrefPhoneNumber(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    />
+                  </label>
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-paper px-3 py-2">
+                    <span className="text-xs text-muted font-body">Price alerts</span>
+                    <button
+                      onClick={() => setAlertsOn(!alertsOn)}
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-display font-bold transition-colors ${
+                        alertsOn
+                          ? 'border-brand-dark-green bg-brand-light-green text-brand-dark-green'
+                          : 'border-border bg-off text-muted'
+                      }`}
+                    >
+                      {alertsOn ? 'On' : 'Off'}
+                    </button>
+                  </div>
                   <button
-                    onClick={() => setAlertsOn(!alertsOn)}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-display font-bold transition-colors ${
-                      alertsOn
-                        ? 'bg-brand-light-green text-brand-dark-green'
-                        : 'bg-off text-muted'
-                    }`}
+                    onClick={savePreferences}
+                    className="w-full rounded-full bg-brand-blue py-2 text-sm font-display font-bold text-white hover:bg-brand-dark-blue transition-colors"
                   >
-                    {alertsOn ? 'On' : 'Off'}
+                    Save Preferences
                   </button>
-                </PrefRow>
-              </div>
-
-              <AnimatePresence>
-                {showEditPrefs && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <p className="mt-4 text-xs text-muted font-body italic">
-                      Preferences editing coming soon — for now, these are demo defaults.
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  {prefsSaveMessage && (
+                    <p className="text-center text-xs font-body text-brand-dark-green">{prefsSaveMessage}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <PrefRow icon={<MapPin size={14} />} label="Home airport">
+                    <Chip color="blue">{dbUser?.homeAirportCode ?? '—'}</Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Briefcase size={14} />} label="Default class">
+                    <Chip color="blue">{(dbUser?.defaultCabinClass ?? 'economy').replace('_', ' ')}</Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Briefcase size={14} />} label="Usual bags">
+                    <Chip color="gray">
+                      {(() => {
+                        try {
+                          const bagPref = dbUser?.defaultBags ? JSON.parse(dbUser.defaultBags) as { bag?: string } : null;
+                          if (bagPref?.bag === 'checked') return 'Checked';
+                          if (bagPref?.bag === 'personal_only') return 'Personal only';
+                          return 'Personal + Carry-on';
+                        } catch {
+                          return 'Personal + Carry-on';
+                        }
+                      })()}
+                    </Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Bell size={14} />} label="Phone">
+                    <span className="text-sm font-body text-ink">{dbUser?.phoneNumber ?? '—'}</span>
+                  </PrefRow>
+                  <PrefRow icon={<Bell size={14} />} label="Price alerts">
+                    <button
+                      onClick={() => setAlertsOn(!alertsOn)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-display font-bold transition-colors ${
+                        alertsOn
+                          ? 'bg-brand-light-green text-brand-dark-green'
+                          : 'bg-off text-muted'
+                      }`}
+                    >
+                      {alertsOn ? 'On' : 'Off'}
+                    </button>
+                  </PrefRow>
+                </div>
+              )}
             </div>
 
             {/* Airline Loyalty Status */}
@@ -427,6 +588,9 @@ export default function ProfilePage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {loyaltyError && (
+                <p className="mt-2 text-xs font-body text-brand-dark-burgundy">{loyaltyError}</p>
+              )}
             </div>
 
             {/* Saved Flights List */}
@@ -443,9 +607,17 @@ export default function ProfilePage() {
                 {savedFlights.map((sf) => {
                   const isActive = selectedSaved?.id === sf.id;
                   return (
-                    <button
+                    <div
                       key={sf.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => selectSavedFlight(sf)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          selectSavedFlight(sf);
+                        }
+                      }}
                       className={`w-full text-left rounded-lg p-3 transition-colors ${
                         isActive
                           ? 'bg-brand-blue/10 border border-brand-blue'
@@ -473,23 +645,52 @@ export default function ProfilePage() {
                         )}
                       </div>
                       <p className="text-xs text-muted font-body mt-0.5">
-                        {sf.flight.departureDate} &middot; {sf.flight.airline}
+                        {sf.departureDate?.toString() ?? sf.flight?.departureDate} &middot; {sf.airlineName ?? sf.flight?.airline}
                       </p>
                       <div className="flex items-center justify-between mt-1">
                         <span className="font-display font-bold text-brand-dark-blue text-sm">
-                          ${sf.flight.totalPrice}
+                          ${sf.totalPrice ?? sf.flight?.totalPrice}
                         </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openFlightDetail(sf.flight);
-                          }}
-                          className="text-[10px] text-brand-blue hover:text-brand-dark-blue font-body flex items-center gap-0.5"
-                        >
-                          Details <ChevronRight size={10} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={sf.folderId ?? ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const nextFolderId = e.target.value === '' ? null : Number(e.target.value);
+                              assignSavedFlightToFolder(sf.id, nextFolderId);
+                            }}
+                            className="rounded-md border border-border bg-paper px-2 py-1 text-[10px] font-body text-ink"
+                          >
+                            <option value="">No folder</option>
+                            {folders.filter((folder) => folder.isOwner !== false).map((folder) => (
+                              <option key={folder.id} value={folder.id}>
+                                {folder.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (sf.flight) openFlightDetail(sf.flight);
+                            }}
+                            className="text-[10px] text-brand-blue hover:text-brand-dark-blue font-body flex items-center gap-0.5"
+                          >
+                            Details <ChevronRight size={10} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removeSavedFlight(sf.id);
+                            }}
+                            className="text-[10px] text-brand-dark-red hover:text-red-700 font-body flex items-center gap-0.5"
+                            aria-label="Remove saved flight"
+                          >
+                            <Trash2 size={10} />
+                            Remove
+                          </button>
+                        </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -505,22 +706,20 @@ export default function ProfilePage() {
               <h2 className="font-display font-bold text-sm text-ink">Price Tracker</h2>
             </div>
 
-            {selectedFlight ? (
+            {selectedSaved ? (
               <>
                 {/* Route header */}
                 <div>
                   <p className="font-display font-bold text-lg text-ink">
-                    {selectedSaved!.route}{' '}
+                    {selectedSaved.route}{' '}
                     <span className="font-body font-normal text-muted text-sm">
-                      &middot; {selectedFlight.departureDate.replace(/^2026-0?/, '').replace('-', '/')}
+                      &middot; {selectedSaved.departureDate?.toString() ?? selectedFlight?.departureDate ?? ''}
                     </span>
                   </p>
                   <p className="text-xs text-muted font-body mt-0.5">
-                    {selectedFlight.cabinClass === 'economy'
-                      ? 'Economy'
-                      : selectedFlight.cabinClass.replace('_', ' ')}{' '}
+                    {selectedFlight?.cabinClass === 'economy' ? 'Economy' : selectedFlight?.cabinClass?.replace('_', ' ') ?? ''}{' '}
                     &middot; 1 adult &middot;{' '}
-                    {selectedFlight.bags.checked.included ? '1 checked bag (free)' : 'No checked bag'}
+                    {selectedFlight?.bags?.checked?.included ? '1 checked bag (free)' : 'No checked bag'}
                   </p>
                 </div>
 
@@ -600,11 +799,11 @@ export default function ProfilePage() {
                     </div>
                   </label>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-paper/60 px-3 py-2">
                     <span className="text-xs text-muted font-body">Weekly summary email</span>
                     <button
                       onClick={() => setWeeklySummary(!weeklySummary)}
-                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                      className={`relative h-5 w-10 shrink-0 rounded-full transition-colors ${
                         weeklySummary ? 'bg-brand-dark-green' : 'bg-border'
                       }`}
                     >
@@ -616,9 +815,34 @@ export default function ProfilePage() {
                     </button>
                   </div>
 
-                  <button className="w-full rounded-full bg-brand-blue text-white py-2.5 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors shadow-cta">
+                  <button
+                    onClick={async () => {
+                      if (!selectedSaved) return;
+                      try {
+                        const token = await getToken();
+                        await apiFetch(`/saved-flights/${selectedSaved.id}/alert`, {
+                          method: 'PUT',
+                          body: JSON.stringify({
+                            priceAlertEnabled: alertsOn,
+                            priceDropThreshold: alertDropBelow ? Number(alertDropBelow) : null,
+                            priceRiseThreshold: alertRiseAbove ? Number(alertRiseAbove) : null,
+                            alertFrequency: selectedSaved.alertFrequency ?? 'immediate',
+                          }),
+                        }, token);
+                        setAlertSaved(true);
+                        setTimeout(() => setAlertSaved(false), 3000);
+                      } catch (err) {
+                        console.error('Failed to save alert settings:', err);
+                      }
+                    }}
+                    className="w-full rounded-full bg-brand-blue text-white py-2.5 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors shadow-cta">
                     Save Alert Settings
                   </button>
+                  {alertSaved && (
+                    <p className="text-center text-xs text-brand-dark-green font-body mt-2">
+                      Alert settings saved!
+                    </p>
+                  )}
                 </div>
               </>
             ) : (
@@ -744,23 +968,27 @@ export default function ProfilePage() {
                       {/* Folder actions */}
                       {!isEditing && (
                         <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              setEditingFolder(folder.id);
-                              setEditFolderName(folder.name);
-                            }}
-                            className="p-1.5 rounded-md text-muted hover:text-ink hover:bg-paper transition-colors"
-                            aria-label="Edit folder"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => deleteFolder(folder.id)}
-                            className="p-1.5 rounded-md text-muted hover:text-brand-dark-red hover:bg-paper transition-colors"
-                            aria-label="Delete folder"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {folder.isOwner !== false && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingFolder(folder.id);
+                                  setEditFolderName(folder.name);
+                                }}
+                                className="p-1.5 rounded-md text-muted hover:text-ink hover:bg-paper transition-colors"
+                                aria-label="Edit folder"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => deleteFolder(folder.id)}
+                                className="p-1.5 rounded-md text-muted hover:text-brand-dark-red hover:bg-paper transition-colors"
+                                aria-label="Delete folder"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => copyShareLink(folder)}
                             className="p-1.5 rounded-md text-muted hover:text-brand-blue hover:bg-paper transition-colors"
@@ -815,36 +1043,43 @@ export default function ProfilePage() {
                             )}
 
                             {/* Invite collaborator */}
-                            <div>
-                              <p className="text-xs text-muted font-body font-semibold mb-1.5">
-                                Invite
-                              </p>
-                              <div className="flex gap-2">
-                                <input
-                                  type="email"
-                                  placeholder="Email address…"
-                                  value={inviteEmail}
-                                  onChange={(e) => setInviteEmail(e.target.value)}
-                                  className="flex-1 rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                                />
-                                <select
-                                  value={invitePermission}
-                                  onChange={(e) =>
-                                    setInvitePermission(e.target.value as 'view' | 'edit')
-                                  }
-                                  className="rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                                >
-                                  <option value="view">View</option>
-                                  <option value="edit">Edit</option>
-                                </select>
-                                <button
-                                  onClick={() => addCollaborator(folder.id)}
-                                  className="rounded-lg bg-brand-blue text-white px-3 py-1.5 text-xs font-display font-bold hover:bg-brand-dark-blue transition-colors"
-                                >
+                            {folder.isOwner !== false ? (
+                              <div>
+                                <p className="text-xs text-muted font-body font-semibold mb-1.5">
                                   Invite
-                                </button>
+                                </p>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="email"
+                                    placeholder="Email address…"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    className="flex-1 rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                  />
+                                  <select
+                                    value={invitePermission}
+                                    onChange={(e) =>
+                                      setInvitePermission(e.target.value as 'view' | 'edit')
+                                    }
+                                    className="rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                  >
+                                    <option value="view">View</option>
+                                    <option value="edit">Edit</option>
+                                  </select>
+                                  <button
+                                    onClick={() => addCollaborator(folder.id)}
+                                    className="rounded-lg bg-brand-blue text-white px-3 py-1.5 text-xs font-display font-bold hover:bg-brand-dark-blue transition-colors"
+                                  >
+                                    Invite
+                                  </button>
+                                </div>
+                                {inviteError && (
+                                  <p className="mt-1 text-[10px] text-brand-dark-burgundy font-body">{inviteError}</p>
+                                )}
                               </div>
-                            </div>
+                            ) : (
+                              <p className="text-[10px] text-muted font-body">Only folder owners can invite collaborators.</p>
+                            )}
 
                             {/* Share link */}
                             <button

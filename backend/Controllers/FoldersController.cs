@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
 using FairFleetAPI.Models;
+using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class FoldersController : ControllerBase
 {
@@ -19,14 +22,21 @@ public class FoldersController : ControllerBase
 
     private async Task<User?> GetCurrentUser()
     {
-        var clerkUserId = Request.Headers["X-Clerk-User-Id"].FirstOrDefault();
+        var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
+        var emailFromToken = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
         if (user == null)
         {
-            user = new User { ClerkUserId = clerkUserId };
+            user = new User { ClerkUserId = clerkUserId, Email = emailFromToken };
             _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(emailFromToken) && !string.Equals(user.Email, emailFromToken, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Email = emailFromToken;
+            user.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -40,14 +50,19 @@ public class FoldersController : ControllerBase
         if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
 
         var folders = await _db.Folders
-            .Where(f => f.UserId == user.Id)
+            .Where(f => f.UserId == user.Id || f.Collaborators.Any(c => c.UserId == user.Id))
             .Include(f => f.Flights)
+            .Include(f => f.Collaborators)
+                .ThenInclude(c => c.User)
             .Select(f => new
             {
                 f.Id,
                 f.Name,
                 f.ShareToken,
                 FlightCount = f.Flights.Count,
+                IsOwner = f.UserId == user.Id,
+                Collaborators = f.Collaborators.Select(c => new { c.Id, Name = c.User.Email, c.Permission }),
+                Flights = f.Flights.Select(fl => new { fl.Id, fl.Route, fl.AirlineName, fl.TotalPrice, fl.DepartureDate }),
                 f.CreatedAt
             })
             .ToListAsync();
@@ -65,15 +80,22 @@ public class FoldersController : ControllerBase
             .Include(f => f.Flights)
             .Include(f => f.Collaborators)
                 .ThenInclude(c => c.User)
-            .FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+            .FirstOrDefaultAsync(f => f.Id == id);
 
-        if (folder == null) return NotFound();
+        if (folder == null) return NotFound(new { message = "Folder not found or you do not have owner access." });
+        var isOwner = folder.UserId == user.Id;
+        var isCollaborator = folder.Collaborators.Any(c => c.UserId == user.Id);
+        if (!isOwner && !isCollaborator)
+        {
+            return Forbid();
+        }
 
         return Ok(new
         {
             folder.Id,
             folder.Name,
             folder.ShareToken,
+            IsOwner = isOwner,
             Flights = folder.Flights.Select(fl => new
             {
                 fl.Id, fl.Route, fl.AirlineName, fl.TotalPrice, fl.DepartureDate
@@ -127,10 +149,13 @@ public class FoldersController : ControllerBase
         var user = await GetCurrentUser();
         if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
 
-        var folder = await _db.Folders
-            .FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+        var folder = await _db.Folders.FirstOrDefaultAsync(f => f.Id == id);
 
         if (folder == null) return NotFound();
+        if (folder.UserId != user.Id)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only folder owners can delete folders." });
+        }
 
         _db.Folders.Remove(folder);
         await _db.SaveChangesAsync();
@@ -149,9 +174,10 @@ public class FoldersController : ControllerBase
 
         if (folder == null) return NotFound();
 
-        var invitee = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+        var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
+        var invitee = await _db.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail);
         if (invitee == null)
-            return BadRequest(new { message = "User not found" });
+            return NotFound(new { message = "No existing FairFleet account found for this email." });
 
         var existing = await _db.FolderCollaborators
             .AnyAsync(c => c.FolderId == id && c.UserId == invitee.Id);

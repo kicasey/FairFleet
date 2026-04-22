@@ -3,11 +3,13 @@
 import { useState, useEffect, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Clock, Heart, Bell, ChevronDown, Check, AlertTriangle } from 'lucide-react';
+import { useAuth } from '@clerk/nextjs';
 import { Flight } from '@/lib/types';
 import PriceChart from '@/components/PriceChart';
 import ShareButton from '@/components/ShareButton';
 import { getAirline, getFareClassesForAirline } from '@/data/airlines';
 import { buildBookingUrl } from '@/lib/bookingUrls';
+import { apiFetch } from '@/lib/api';
 
 interface FlightDetailModalProps {
   flight: Flight | null;
@@ -32,6 +34,9 @@ export default function FlightDetailModal({
   const [alertFrequency, setAlertFrequency] = useState<
     'immediate' | 'daily' | 'weekly'
   >('immediate');
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [savingAlert, setSavingAlert] = useState(false);
+  const { getToken } = useAuth();
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -70,6 +75,48 @@ export default function FlightDetailModal({
 
   const formatCabinClass = (cls: string) =>
     cls.replaceAll('_', ' ').replaceAll(/\b\w/g, (l) => l.toUpperCase());
+
+  async function handleSaveAlert() {
+    if (!flight) {
+      setAlertMessage('Flight details are not loaded yet.');
+      return;
+    }
+    try {
+      setSavingAlert(true);
+      setAlertMessage(null);
+      const token = await getToken();
+      const saved = await apiFetch<{ id: number }>('/saved-flights', {
+        method: 'POST',
+        body: JSON.stringify({
+          flightData: JSON.stringify(flight),
+          route: `${flight.origin} → ${flight.destination}`,
+          airlineCode: flight.airlineCode,
+          airlineName: flight.airline,
+          departureDate: flight.departureDate,
+          totalPrice: flight.totalPrice,
+          baseFare: flight.baseFare,
+          bagFees: flight.bagFees,
+          seatFees: flight.seatFees,
+        }),
+      }, token);
+
+      await apiFetch(`/saved-flights/${saved.id}/alert`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          priceAlertEnabled: true,
+          priceDropThreshold: priceDropThreshold ? Number(priceDropThreshold) : null,
+          priceRiseThreshold: priceRiseThreshold ? Number(priceRiseThreshold) : null,
+          alertFrequency,
+        }),
+      }, token);
+
+      setAlertMessage('Price alert saved to your profile.');
+    } catch (err) {
+      setAlertMessage(err instanceof Error ? err.message : 'Failed to save alert.');
+    } finally {
+      setSavingAlert(false);
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -438,9 +485,16 @@ export default function FlightDetailModal({
                               </div>
                             </div>
 
-                            <button className="w-full rounded-full bg-brand-blue text-white py-2 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors">
-                              Save Alert
+                            <button
+                              onClick={handleSaveAlert}
+                              disabled={savingAlert}
+                              className="w-full rounded-full bg-brand-blue text-white py-2 text-sm font-display font-bold hover:bg-brand-dark-blue transition-colors disabled:opacity-60"
+                            >
+                              {savingAlert ? 'Saving…' : 'Save Alert'}
                             </button>
+                            {alertMessage && (
+                              <p className="text-xs text-muted">{alertMessage}</p>
+                            )}
                           </div>
                         </motion.div>
                       )}

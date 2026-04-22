@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useMemo, Suspense } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { SlidersHorizontal, ArrowUpDown, Plane } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import FlightCard from '@/components/FlightCard';
 import FlightDetailModal from '@/components/FlightDetailModal';
-import { dummyFlights } from '@/data/flights';
 import { Flight } from '@/lib/types';
+import { apiFetch, fetchFlights } from '@/lib/api';
 
 type SortKey = 'price' | 'duration' | 'departure';
+const FILTER_STORAGE_KEY = 'fairfleet.search.filters';
+const SORT_STORAGE_KEY = 'fairfleet.search.sort';
 
 interface Filters {
   priceMin: string;
@@ -36,6 +39,25 @@ const TIME_OPTIONS = [
   { value: 'redeye', label: 'Red-eye', sub: '9pm – 6am' },
 ];
 
+const BASE_AIRLINES = [
+  'Delta',
+  'American',
+  'United',
+  'Southwest',
+  'Spirit',
+  'Frontier',
+  'JetBlue',
+  'Alaska',
+];
+
+const POPULAR_DESTINATIONS = ['LAX', 'JFK', 'MIA', 'ORD', 'DEN', 'SEA', 'BOS', 'LAS', 'SFO', 'DFW'];
+
+function tomorrowISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -57,41 +79,132 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 }
 
 function SearchResults() {
+  const { getToken } = useAuth();
   const searchParams = useSearchParams();
-  const from = searchParams.get('from') ?? '';
-  const to = searchParams.get('to') ?? '';
-  const date = searchParams.get('date') ?? '';
-  const passengers = searchParams.get('passengers') ?? '1';
+  const from = searchParams.get('from') ?? 'ATL';
+  const rawTo = searchParams.get('to') ?? '';
+  const rawDate = searchParams.get('date') ?? searchParams.get('dep') ?? '';
+  const [fallbackTo] = useState(() => {
+    const pool = POPULAR_DESTINATIONS.filter((c) => c !== from);
+    return pool[Math.floor(Math.random() * pool.length)];
+  });
+  const to = rawTo || fallbackTo;
+  const date = rawDate || tomorrowISO();
+  const passengers = searchParams.get('passengers') ?? searchParams.get('adults') ?? '1';
   const cabin = searchParams.get('cabin') ?? 'economy';
   const bags = searchParams.get('bags') ?? '0 bags';
+  const returnDate = searchParams.get('returnDate') ?? '';
+  const roundTrip = searchParams.get('roundTrip') === 'true';
+  const flexibleDates = searchParams.get('flexibleDates') === 'true';
+  const flexibleDays = Number(searchParams.get('flexibleDays') ?? '0');
+  const children = Number(searchParams.get('children') ?? '0');
+  const checkedBags = Number(searchParams.get('checkedBags') ?? '0');
+  const maxStops = searchParams.get('maxStops');
+  const airlines = searchParams.get('airlines');
+  const departureTimeBuckets = searchParams.get('departureTimeBuckets');
+  const maxLayoverMinutes = searchParams.get('maxLayoverMinutes');
+
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!from || !to) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    fetchFlights({
+      from,
+      to,
+      date,
+      returnDate,
+      roundTrip,
+      flexibleDates,
+      flexibleDays: Number.isFinite(flexibleDays) ? flexibleDays : 0,
+      cabinClass: cabin,
+      passengers: Number(passengers),
+      children,
+      bags: bags ? bags.split(',').filter(Boolean) : [],
+      checkedBags,
+      maxStops: maxStops ? Number(maxStops) : undefined,
+      airlines: airlines ? airlines.split(',').filter(Boolean) : [],
+      departureTimeBuckets: departureTimeBuckets ? departureTimeBuckets.split(',').filter(Boolean) : [],
+      maxLayoverMinutes: maxLayoverMinutes ? Number(maxLayoverMinutes) : undefined,
+    })
+      .then((res) => setFlights(res ?? []))
+      .catch((err) => console.error('Failed to fetch flights:', err))
+      .finally(() => setLoading(false));
+  }, [from, to, date, returnDate, roundTrip, flexibleDates, flexibleDays, cabin, passengers, children, bags, checkedBags, maxStops, airlines, departureTimeBuckets, maxLayoverMinutes]);
 
   const allAirlines = useMemo(
-    () =>
-      [...new Set(dummyFlights.map((f) => f.airline))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [],
+    () => [...new Set([...BASE_AIRLINES, ...flights.map((f) => f.airline)])].sort((a, b) => a.localeCompare(b)),
+    [flights],
   );
 
-  const [filters, setFilters] = useState<Filters>({
-    priceMin: '',
-    priceMax: '',
-    stops: new Set([0, 1, 2]),
-    airlines: new Set(allAirlines),
-    durationMin: '',
-    durationMax: '',
-    cabinClass: new Set(['economy', 'premium_economy', 'business', 'first']),
-    departureTime: new Set(['morning', 'afternoon', 'evening', 'redeye']),
+  const [filters, setFilters] = useState<Filters>(() => {
+    if (typeof window !== 'undefined') {
+      const raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as {
+            priceMin: string; priceMax: string; stops: number[]; airlines: string[]; durationMin: string; durationMax: string; cabinClass: string[]; departureTime: string[];
+          };
+          return {
+            priceMin: parsed.priceMin ?? '',
+            priceMax: parsed.priceMax ?? '',
+            stops: new Set(parsed.stops ?? [0, 1, 2]),
+            airlines: new Set(parsed.airlines ?? []),
+            durationMin: parsed.durationMin ?? '',
+            durationMax: parsed.durationMax ?? '',
+            cabinClass: new Set(parsed.cabinClass ?? ['economy', 'premium_economy', 'business', 'first']),
+            departureTime: new Set(parsed.departureTime ?? ['morning', 'afternoon', 'evening', 'redeye']),
+          };
+        } catch {
+          // ignore invalid session payload
+        }
+      }
+    }
+    return {
+      priceMin: '',
+      priceMax: '',
+      stops: new Set([0, 1, 2]),
+      airlines: new Set<string>(),
+      durationMin: '',
+      durationMax: '',
+      cabinClass: new Set(['economy', 'premium_economy', 'business', 'first']),
+      departureTime: new Set(['morning', 'afternoon', 'evening', 'redeye']),
+    };
   });
 
-  const [sortBy, setSortBy] = useState<SortKey>('price');
+  const [sortBy, setSortBy] = useState<SortKey>(() => {
+    if (typeof window !== 'undefined') {
+      const sort = sessionStorage.getItem(SORT_STORAGE_KEY);
+      if (sort === 'price' || sort === 'duration' || sort === 'departure') {
+        return sort;
+      }
+    }
+    return 'price';
+  });
   const [showMiles, setShowMiles] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
   const [savedFlights, setSavedFlights] = useState<Set<string>>(new Set());
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  useEffect(() => {
+    const payload = {
+      ...filters,
+      stops: [...filters.stops],
+      airlines: [...filters.airlines],
+      cabinClass: [...filters.cabinClass],
+      departureTime: [...filters.departureTime],
+    };
+    sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(payload));
+  }, [filters]);
+
+  useEffect(() => {
+    sessionStorage.setItem(SORT_STORAGE_KEY, sortBy);
+  }, [sortBy]);
+
   const filteredFlights = useMemo(() => {
-    return dummyFlights.filter((f) => {
+    return flights.filter((f) => {
       if (filters.priceMin && f.totalPrice < Number(filters.priceMin))
         return false;
       if (filters.priceMax && f.totalPrice > Number(filters.priceMax))
@@ -100,7 +213,8 @@ function SearchResults() {
       const stopBucket = Math.min(f.stops, 2);
       if (!filters.stops.has(stopBucket)) return false;
 
-      if (!filters.airlines.has(f.airline)) return false;
+      const activeAirlines = filters.airlines.size > 0 ? filters.airlines : new Set(allAirlines);
+      if (!activeAirlines.has(f.airline)) return false;
 
       if (
         filters.durationMin &&
@@ -119,7 +233,7 @@ function SearchResults() {
 
       return true;
     });
-  }, [filters]);
+  }, [flights, filters, allAirlines]);
 
   const sortedFlights = useMemo(() => {
     const sorted = [...filteredFlights];
@@ -140,13 +254,35 @@ function SearchResults() {
     return sorted;
   }, [filteredFlights, sortBy]);
 
-  const handleSave = (flight: Flight) => {
+  const handleSave = async (flight: Flight) => {
+    const alreadySaved = savedFlights.has(flight.id);
     setSavedFlights((prev) => {
       const next = new Set(prev);
       if (next.has(flight.id)) next.delete(flight.id);
       else next.add(flight.id);
       return next;
     });
+    if (!alreadySaved) {
+      try {
+        const token = await getToken();
+        await apiFetch('/saved-flights', {
+          method: 'POST',
+          body: JSON.stringify({
+            flightData: JSON.stringify(flight),
+            route: `${flight.origin} → ${flight.destination}`,
+            airlineCode: flight.airlineCode,
+            airlineName: flight.airline,
+            departureDate: flight.departureDate,
+            totalPrice: flight.totalPrice,
+            baseFare: flight.baseFare,
+            bagFees: flight.bagFees,
+            seatFees: flight.seatFees,
+          }),
+        }, token);
+      } catch (err) {
+        console.error('Failed to save flight:', err);
+      }
+    }
   };
 
   const sortLabel: Record<SortKey, string> = {
@@ -156,9 +292,9 @@ function SearchResults() {
   };
 
   const searchSummary = {
-    from: from || 'Any',
-    to: to || 'Anywhere',
-    date: date || 'Flexible',
+    from,
+    to,
+    date,
     passengers: `${passengers} pax`,
     cabin: cabin.replaceAll('_', ' ').replaceAll(/\b\w/g, (l) => l.toUpperCase()),
     bags,
@@ -389,10 +525,24 @@ function SearchResults() {
             </div>
 
             {/* Flight cards */}
-            {sortedFlights.length > 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <p className="font-display text-muted text-sm animate-pulse">Searching flights...</p>
+              </div>
+            ) : sortedFlights.length > 0 ? (
               <div className="space-y-3">
                 {sortedFlights.map((flight, idx) => (
                   <div key={flight.id}>
+                    {flight.priceHistory?.length > 0 && (
+                      <div className="mb-1 text-[10px] font-body text-muted">
+                        {(() => {
+                          const avg = flight.priceHistory.reduce((acc, p) => acc + p.price, 0) / flight.priceHistory.length;
+                          return flight.totalPrice <= avg
+                            ? 'Prices are historically low right now.'
+                            : 'Prices are trending higher than usual.';
+                        })()}
+                      </div>
+                    )}
                     {showMiles && flight.milesEquivalent ? (
                       <div className="relative">
                         <FlightCard
