@@ -373,7 +373,7 @@ public class SerpApiFlightSearchService : IFlightSearchService
             "UA" => $"https://www.united.com/en/us/fsr/choose-flights?f={origin}&t={destination}&d={departDate}{(isRound ? $"&r={returnDate}" : "")}&px={passengers}&taxng=1&idx=1",
             "WN" => $"https://www.southwest.com/air/booking/select.html?originationAirportCode={origin}&destinationAirportCode={destination}&departureDate={departDate}{(isRound ? $"&returnDate={returnDate}" : "")}&adultPassengersCount={passengers}&tripType={(isRound ? "roundtrip" : "oneway")}",
             "NK" => $"https://www.spirit.com/book/flights?orgCode={origin}&desCode={destination}&departDate={departDate}&numAdt={passengers}&tripType={(isRound ? "RT" : "OW")}",
-            "F9" => $"https://www.flyfrontier.com/booking/search?origin={origin}&destination={destination}&outboundDate={departDate}&ADT={passengers}",
+            "F9" => "https://www.flyfrontier.com/",
             "B6" => $"https://www.jetblue.com/booking/flights?from={origin}&to={destination}&depart={departDate}{(isRound ? $"&return={returnDate}" : "")}&pax={passengers}&isMultiCity=false",
             "AS" => $"https://www.alaskaair.com/shopping/flights?A={passengers}&type={(isRound ? "RT" : "OW")}&O={origin}&D={destination}&OD={departDate}{(isRound ? $"&RD={returnDate}" : "")}",
             _ => $"https://www.google.com/travel/flights?q=flights+from+{origin}+to+{destination}+on+{departDate}",
