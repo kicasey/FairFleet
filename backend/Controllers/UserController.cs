@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FairFleetAPI.Data;
 using FairFleetAPI.Models;
+using FairFleetAPI.Services.Notifications;
 using System.Security.Claims;
 
 namespace FairFleetAPI.Controllers;
@@ -13,10 +14,12 @@ namespace FairFleetAPI.Controllers;
 public class UserController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly INotificationSender _notifications;
 
-    public UserController(AppDbContext db)
+    public UserController(AppDbContext db, INotificationSender notifications)
     {
         _db = db;
+        _notifications = notifications;
     }
 
     private async Task<User?> GetCurrentUser()
@@ -31,12 +34,18 @@ public class UserController : ControllerBase
             user = new User { ClerkUserId = clerkUserId, Email = emailFromToken };
             _db.Users.Add(user);
             await _db.SaveChangesAsync();
+            await _notifications.SendWelcomeAsync(user, HttpContext.RequestAborted);
         }
         else if (!string.IsNullOrWhiteSpace(emailFromToken) && !string.Equals(user.Email, emailFromToken, StringComparison.OrdinalIgnoreCase))
         {
+            var hadNoEmail = string.IsNullOrWhiteSpace(user.Email);
             user.Email = emailFromToken;
             user.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+            if (hadNoEmail)
+            {
+                await _notifications.SendWelcomeAsync(user, HttpContext.RequestAborted);
+            }
         }
 
         return user;

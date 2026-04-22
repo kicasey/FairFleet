@@ -42,6 +42,52 @@ public class NotificationSender : INotificationSender
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SendWelcomeAsync(User user, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(user.Email))
+        {
+            _logger.LogInformation("Skipping welcome email for user {UserId}: no email on file", user.Id);
+            return;
+        }
+
+        var apiKey = _config["SendGrid:ApiKey"] ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
+        var fromEmail = _config["SendGrid:FromEmail"] ?? Environment.GetEnvironmentVariable("SENDGRID_FROM_EMAIL");
+
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(fromEmail))
+        {
+            _logger.LogWarning("SendGrid not configured; skipping welcome email for user {UserId}", user.Id);
+            return;
+        }
+
+        try
+        {
+            var client = new SendGridClient(apiKey);
+            var from = new EmailAddress(fromEmail, "FairFleet");
+            var to = new EmailAddress(user.Email);
+            var subject = "Welcome to FairFleet";
+            var plain = "Welcome to FairFleet!\n\nYou're all set — search flights, save trips, and turn on price alerts to get an email when a saved flight's price moves.\n\nHappy travels,\nThe FairFleet team";
+            var html = "<p>Welcome to FairFleet!</p>" +
+                       "<p>You're all set — search flights, save trips, and turn on price alerts to get an email when a saved flight's price moves.</p>" +
+                       "<p>Happy travels,<br/>The FairFleet team</p>";
+            var msg = MailHelper.CreateSingleEmail(from, to, subject, plain, html);
+            var response = await client.SendEmailAsync(msg, cancellationToken);
+
+            if ((int)response.StatusCode >= 200 && (int)response.StatusCode < 300)
+            {
+                _logger.LogInformation("SendGrid accepted welcome email for user {UserId} ({Status})", user.Id, (int)response.StatusCode);
+            }
+            else
+            {
+                var errorBody = await response.Body.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("SendGrid rejected welcome email for user {UserId}: {Status} {Body}", user.Id, (int)response.StatusCode, errorBody);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendGrid welcome send threw for user {UserId}", user.Id);
+        }
+    }
+
     private async Task<string> TrySendEmailAsync(string toEmail, SavedFlight savedFlight, string type, string message, CancellationToken cancellationToken)
     {
         var apiKey = _config["SendGrid:ApiKey"] ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
