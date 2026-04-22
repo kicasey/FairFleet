@@ -24,12 +24,19 @@ public class FoldersController : ControllerBase
     {
         var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
+        var emailFromToken = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
         if (user == null)
         {
-            user = new User { ClerkUserId = clerkUserId };
+            user = new User { ClerkUserId = clerkUserId, Email = emailFromToken };
             _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(emailFromToken) && !string.Equals(user.Email, emailFromToken, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Email = emailFromToken;
+            user.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -75,7 +82,7 @@ public class FoldersController : ControllerBase
                 .ThenInclude(c => c.User)
             .FirstOrDefaultAsync(f => f.Id == id);
 
-        if (folder == null) return NotFound();
+        if (folder == null) return NotFound(new { message = "Folder not found or you do not have owner access." });
         var isOwner = folder.UserId == user.Id;
         var isCollaborator = folder.Collaborators.Any(c => c.UserId == user.Id);
         if (!isOwner && !isCollaborator)
@@ -142,10 +149,13 @@ public class FoldersController : ControllerBase
         var user = await GetCurrentUser();
         if (user == null) return Unauthorized(new { message = "Missing X-Clerk-User-Id header" });
 
-        var folder = await _db.Folders
-            .FirstOrDefaultAsync(f => f.Id == id && f.UserId == user.Id);
+        var folder = await _db.Folders.FirstOrDefaultAsync(f => f.Id == id);
 
         if (folder == null) return NotFound();
+        if (folder.UserId != user.Id)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only folder owners can delete folders." });
+        }
 
         _db.Folders.Remove(folder);
         await _db.SaveChangesAsync();
@@ -164,9 +174,10 @@ public class FoldersController : ControllerBase
 
         if (folder == null) return NotFound();
 
-        var invitee = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+        var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
+        var invitee = await _db.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail);
         if (invitee == null)
-            return BadRequest(new { message = "User not found" });
+            return NotFound(new { message = "No existing FairFleet account found for this email." });
 
         var existing = await _db.FolderCollaborators
             .AnyAsync(c => c.FolderId == id && c.UserId == invitee.Id);

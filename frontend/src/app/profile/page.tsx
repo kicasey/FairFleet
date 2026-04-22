@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { apiFetch } from '@/lib/api';
+import { airports } from '@/data/airports';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
@@ -36,29 +37,12 @@ export default function ProfilePage() {
   const { getToken } = useAuth();
   const { user: clerkUser, isLoaded } = useUser();
 
-  const [dbUser, setDbUser] = useState<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string } | null>(null);
+  const [dbUser, setDbUser] = useState<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; defaultBags?: string } | null>(null);
   const [loyaltyStatuses, setLoyaltyStatuses] = useState<LoyaltyStatus[]>([]);
   const [savedFlights, setSavedFlights] = useState<SavedFlight[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    async function syncUser() {
-      try {
-        const token = await getToken();
-        const profile = await apiFetch<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; LoyaltyStatuses: LoyaltyStatus[] }>('/user/profile', {}, token);
-        setDbUser(profile);
-        if (profile.LoyaltyStatuses) setLoyaltyStatuses(profile.LoyaltyStatuses);
-        const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
-        if (foldersData) setFolders(foldersData);
-        const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
-        if (savedData) setSavedFlights(savedData);
-      } catch (err) {
-        console.error('Failed to sync user:', err);
-      }
-    }
-    if (clerkUser) syncUser();
-  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
 
   const [selectedSaved, setSelectedSaved] = useState<SavedFlight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
@@ -89,6 +73,43 @@ export default function ProfilePage() {
   const [alertsOn, setAlertsOn] = useState(true);
   const [alertSaved, setAlertSaved] = useState(false);
   const [showEditPrefs, setShowEditPrefs] = useState(false);
+  const [prefsSaveMessage, setPrefsSaveMessage] = useState<string | null>(null);
+  const [prefHomeAirport, setPrefHomeAirport] = useState('');
+  const [prefDefaultClass, setPrefDefaultClass] = useState<'economy' | 'premium_economy' | 'business' | 'first'>('economy');
+  const [prefUsualBag, setPrefUsualBag] = useState<'personal_carryon' | 'checked' | 'personal_only'>('personal_carryon');
+  const [prefPhoneNumber, setPrefPhoneNumber] = useState('');
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    async function syncUser() {
+      try {
+        const token = await getToken();
+        const profile = await apiFetch<{ email?: string; homeAirportCode?: string; defaultCabinClass?: string; phoneNumber?: string; defaultBags?: string; loyaltyStatuses?: LoyaltyStatus[]; LoyaltyStatuses?: LoyaltyStatus[] }>('/user/profile', {}, token);
+        setDbUser(profile);
+        const statuses = profile.loyaltyStatuses ?? profile.LoyaltyStatuses ?? [];
+        setLoyaltyStatuses(statuses);
+        setPrefHomeAirport(profile.homeAirportCode ?? '');
+        setPrefDefaultClass((profile.defaultCabinClass as 'economy' | 'premium_economy' | 'business' | 'first') ?? 'economy');
+        setPrefPhoneNumber(profile.phoneNumber ?? '');
+        if (profile.defaultBags) {
+          try {
+            const bagPrefs = JSON.parse(profile.defaultBags) as { bag?: 'personal_carryon' | 'checked' | 'personal_only'; alertsOn?: boolean };
+            if (bagPrefs.bag) setPrefUsualBag(bagPrefs.bag);
+            if (typeof bagPrefs.alertsOn === 'boolean') setAlertsOn(bagPrefs.alertsOn);
+          } catch {
+            // ignore invalid bag pref payload
+          }
+        }
+        const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
+        if (foldersData) setFolders(foldersData);
+        const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
+        if (savedData) setSavedFlights(savedData);
+      } catch (err) {
+        console.error('Failed to sync user:', err);
+      }
+    }
+    if (clerkUser) syncUser();
+  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Handlers ---- */
 
@@ -124,8 +145,44 @@ export default function ProfilePage() {
       const token = await getToken();
       await apiFetch(`/user/loyalty-status/${id}`, { method: 'DELETE' }, token);
       setLoyaltyStatuses((prev) => prev.filter((s) => s.id !== id));
+      setLoyaltyError(null);
     } catch (err) {
       console.error('Failed to remove loyalty status:', err);
+      setLoyaltyError(err instanceof Error ? err.message : 'Failed to remove loyalty status.');
+    }
+  }
+
+  async function savePreferences() {
+    try {
+      const normalizedAirport = prefHomeAirport.trim().toUpperCase();
+      if (normalizedAirport && !airports.some((airport) => airport.code === normalizedAirport)) {
+        setPrefsSaveMessage('Please select a valid airport code from the list.');
+        return;
+      }
+      const token = await getToken();
+      await apiFetch('/user/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          homeAirportCode: normalizedAirport,
+          defaultCabinClass: prefDefaultClass,
+          phoneNumber: prefPhoneNumber.trim() || null,
+          defaultBags: JSON.stringify({
+            bag: prefUsualBag,
+            alertsOn,
+          }),
+        }),
+      }, token);
+      setDbUser((prev) => ({
+        ...(prev ?? {}),
+        homeAirportCode: normalizedAirport,
+        defaultCabinClass: prefDefaultClass,
+        phoneNumber: prefPhoneNumber.trim() || undefined,
+        defaultBags: JSON.stringify({ bag: prefUsualBag, alertsOn }),
+      }));
+      setPrefsSaveMessage('Preferences saved.');
+      setTimeout(() => setPrefsSaveMessage(null), 2500);
+    } catch (err) {
+      setPrefsSaveMessage(err instanceof Error ? err.message : 'Failed to save preferences.');
     }
   }
 
@@ -165,6 +222,19 @@ export default function ProfilePage() {
       if (editingFolder === id) setEditingFolder(null);
     } catch (err) {
       console.error('Failed to delete folder:', err);
+    }
+  }
+
+  async function removeSavedFlight(id: number) {
+    try {
+      const token = await getToken();
+      await apiFetch(`/saved-flights/${id}`, { method: 'DELETE' }, token);
+      setSavedFlights((prev) => prev.filter((sf) => sf.id !== id));
+      if (selectedSaved?.id === id) {
+        setSelectedSaved(null);
+      }
+    } catch (err) {
+      console.error('Failed to remove saved flight:', err);
     }
   }
 
@@ -215,27 +285,32 @@ export default function ProfilePage() {
             : f,
         ),
       );
+      setInviteError(null);
     } catch (err) {
       console.error('Failed to invite collaborator:', err);
+      setInviteError(err instanceof Error ? err.message : 'Failed to invite collaborator.');
     }
     setInviteEmail('');
   }
 
-  async function assignSavedFlightToFolder(savedFlightId: number, folderId: number) {
+  async function assignSavedFlightToFolder(savedFlightId: number, folderId: number | null) {
     try {
       const token = await getToken();
       await apiFetch(`/saved-flights/${savedFlightId}/folder`, {
         method: 'PUT',
-        body: JSON.stringify(folderId),
+        body: JSON.stringify({ folderId }),
       }, token);
-      setSavedFlights((prev) => prev.map((f) => (f.id === savedFlightId ? { ...f, folderId } : f)));
+      setSavedFlights((prev) =>
+        prev.map((f) => (f.id === savedFlightId ? { ...f, folderId: folderId ?? undefined } : f)),
+      );
     } catch (err) {
       console.error('Failed to assign saved flight to folder:', err);
     }
   }
 
   function copyShareLink(folder: Folder) {
-    navigator.clipboard.writeText(`https://fairfleet.app/shared/${folder.shareToken}`);
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    navigator.clipboard.writeText(`${baseUrl}/shared/${folder.shareToken}`);
     setCopiedShareLink(folder.id);
     setTimeout(() => setCopiedShareLink(null), 2000);
   }
@@ -299,10 +374,21 @@ export default function ProfilePage() {
                   <Chip color="blue">{dbUser?.homeAirportCode ?? '—'}</Chip>
                 </PrefRow>
                 <PrefRow icon={<Briefcase size={14} />} label="Default class">
-                  <Chip color="blue">Economy</Chip>
+                  <Chip color="blue">{(dbUser?.defaultCabinClass ?? 'economy').replace('_', ' ')}</Chip>
                 </PrefRow>
                 <PrefRow icon={<Briefcase size={14} />} label="Usual bags">
-                  <Chip color="gray">Personal + Carry-on</Chip>
+                  <Chip color="gray">
+                    {(() => {
+                      try {
+                        const bagPref = dbUser?.defaultBags ? JSON.parse(dbUser.defaultBags) as { bag?: string } : null;
+                        if (bagPref?.bag === 'checked') return 'Checked';
+                        if (bagPref?.bag === 'personal_only') return 'Personal only';
+                        return 'Personal + Carry-on';
+                      } catch {
+                        return 'Personal + Carry-on';
+                      }
+                    })()}
+                  </Chip>
                 </PrefRow>
                 <PrefRow icon={<Bell size={14} />} label="Phone">
                   <span className="text-sm font-body text-ink">{dbUser?.phoneNumber ?? '—'}</span>
@@ -329,9 +415,73 @@ export default function ProfilePage() {
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden"
                   >
-                    <p className="mt-4 text-xs text-muted font-body italic">
-                      Preferences editing coming soon — for now, these are demo defaults.
-                    </p>
+                    <div className="mt-4 space-y-3 rounded-lg border border-border bg-off/40 p-3">
+                      <input
+                        type="text"
+                        placeholder="Select home airport"
+                        value={prefHomeAirport}
+                        onChange={(e) => setPrefHomeAirport(e.target.value.toUpperCase())}
+                        list="home-airport-options"
+                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
+                      />
+                      <datalist id="home-airport-options">
+                        {airports.map((airport) => (
+                          <option
+                            key={airport.code}
+                            value={airport.code}
+                            label={`${airport.city} - ${airport.name}`}
+                          />
+                        ))}
+                      </datalist>
+                      <select
+                        value={prefDefaultClass}
+                        onChange={(e) => setPrefDefaultClass(e.target.value as 'economy' | 'premium_economy' | 'business' | 'first')}
+                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
+                      >
+                        <option value="economy">Economy</option>
+                        <option value="premium_economy">Premium Economy</option>
+                        <option value="business">Business</option>
+                        <option value="first">First</option>
+                      </select>
+                      <select
+                        value={prefUsualBag}
+                        onChange={(e) => setPrefUsualBag(e.target.value as 'personal_carryon' | 'checked' | 'personal_only')}
+                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
+                      >
+                        <option value="personal_carryon">Personal + Carry-on</option>
+                        <option value="checked">Checked bag</option>
+                        <option value="personal_only">Personal only</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Phone number"
+                        value={prefPhoneNumber}
+                        onChange={(e) => setPrefPhoneNumber(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
+                      />
+                      <div className="flex items-center justify-between rounded-lg border border-border bg-paper px-3 py-2">
+                        <span className="text-xs text-muted font-body">Price alerts</span>
+                        <button
+                          onClick={() => setAlertsOn(!alertsOn)}
+                          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-display font-bold transition-colors ${
+                            alertsOn
+                              ? 'border-brand-dark-green bg-brand-light-green text-brand-dark-green'
+                              : 'border-border bg-off text-muted'
+                          }`}
+                        >
+                          {alertsOn ? 'On' : 'Off'}
+                        </button>
+                      </div>
+                      <button
+                        onClick={savePreferences}
+                        className="w-full rounded-full bg-brand-blue py-2 text-sm font-display font-bold text-white"
+                      >
+                        Save Preferences
+                      </button>
+                      {prefsSaveMessage && (
+                        <p className="text-xs font-body text-muted">{prefsSaveMessage}</p>
+                      )}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -428,6 +578,9 @@ export default function ProfilePage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {loyaltyError && (
+                <p className="mt-2 text-xs font-body text-brand-dark-burgundy">{loyaltyError}</p>
+              )}
             </div>
 
             {/* Saved Flights List */}
@@ -444,9 +597,17 @@ export default function ProfilePage() {
                 {savedFlights.map((sf) => {
                   const isActive = selectedSaved?.id === sf.id;
                   return (
-                    <button
+                    <div
                       key={sf.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => selectSavedFlight(sf)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          selectSavedFlight(sf);
+                        }
+                      }}
                       className={`w-full text-left rounded-lg p-3 transition-colors ${
                         isActive
                           ? 'bg-brand-blue/10 border border-brand-blue'
@@ -484,11 +645,14 @@ export default function ProfilePage() {
                           <select
                             value={sf.folderId ?? ''}
                             onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => assignSavedFlightToFolder(sf.id, Number(e.target.value))}
+                            onChange={(e) => {
+                              const nextFolderId = e.target.value === '' ? null : Number(e.target.value);
+                              assignSavedFlightToFolder(sf.id, nextFolderId);
+                            }}
                             className="rounded-md border border-border bg-paper px-2 py-1 text-[10px] font-body text-ink"
                           >
                             <option value="">No folder</option>
-                            {folders.map((folder) => (
+                            {folders.filter((folder) => folder.isOwner !== false).map((folder) => (
                               <option key={folder.id} value={folder.id}>
                                 {folder.name}
                               </option>
@@ -503,9 +667,20 @@ export default function ProfilePage() {
                           >
                             Details <ChevronRight size={10} />
                           </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removeSavedFlight(sf.id);
+                            }}
+                            className="text-[10px] text-brand-dark-red hover:text-red-700 font-body flex items-center gap-0.5"
+                            aria-label="Remove saved flight"
+                          >
+                            <Trash2 size={10} />
+                            Remove
+                          </button>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -614,11 +789,11 @@ export default function ProfilePage() {
                     </div>
                   </label>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-paper/60 px-3 py-2">
                     <span className="text-xs text-muted font-body">Weekly summary email</span>
                     <button
                       onClick={() => setWeeklySummary(!weeklySummary)}
-                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                      className={`relative h-5 w-10 shrink-0 rounded-full transition-colors ${
                         weeklySummary ? 'bg-brand-dark-green' : 'bg-border'
                       }`}
                     >
@@ -783,23 +958,27 @@ export default function ProfilePage() {
                       {/* Folder actions */}
                       {!isEditing && (
                         <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              setEditingFolder(folder.id);
-                              setEditFolderName(folder.name);
-                            }}
-                            className="p-1.5 rounded-md text-muted hover:text-ink hover:bg-paper transition-colors"
-                            aria-label="Edit folder"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => deleteFolder(folder.id)}
-                            className="p-1.5 rounded-md text-muted hover:text-brand-dark-red hover:bg-paper transition-colors"
-                            aria-label="Delete folder"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {folder.isOwner !== false && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingFolder(folder.id);
+                                  setEditFolderName(folder.name);
+                                }}
+                                className="p-1.5 rounded-md text-muted hover:text-ink hover:bg-paper transition-colors"
+                                aria-label="Edit folder"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => deleteFolder(folder.id)}
+                                className="p-1.5 rounded-md text-muted hover:text-brand-dark-red hover:bg-paper transition-colors"
+                                aria-label="Delete folder"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => copyShareLink(folder)}
                             className="p-1.5 rounded-md text-muted hover:text-brand-blue hover:bg-paper transition-colors"
@@ -854,36 +1033,43 @@ export default function ProfilePage() {
                             )}
 
                             {/* Invite collaborator */}
-                            <div>
-                              <p className="text-xs text-muted font-body font-semibold mb-1.5">
-                                Invite
-                              </p>
-                              <div className="flex gap-2">
-                                <input
-                                  type="email"
-                                  placeholder="Email address…"
-                                  value={inviteEmail}
-                                  onChange={(e) => setInviteEmail(e.target.value)}
-                                  className="flex-1 rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                                />
-                                <select
-                                  value={invitePermission}
-                                  onChange={(e) =>
-                                    setInvitePermission(e.target.value as 'view' | 'edit')
-                                  }
-                                  className="rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                                >
-                                  <option value="view">View</option>
-                                  <option value="edit">Edit</option>
-                                </select>
-                                <button
-                                  onClick={() => addCollaborator(folder.id)}
-                                  className="rounded-lg bg-brand-blue text-white px-3 py-1.5 text-xs font-display font-bold hover:bg-brand-dark-blue transition-colors"
-                                >
+                            {folder.isOwner !== false ? (
+                              <div>
+                                <p className="text-xs text-muted font-body font-semibold mb-1.5">
                                   Invite
-                                </button>
+                                </p>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="email"
+                                    placeholder="Email address…"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    className="flex-1 rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                  />
+                                  <select
+                                    value={invitePermission}
+                                    onChange={(e) =>
+                                      setInvitePermission(e.target.value as 'view' | 'edit')
+                                    }
+                                    className="rounded-lg border border-border bg-paper px-2 py-1.5 text-xs font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                  >
+                                    <option value="view">View</option>
+                                    <option value="edit">Edit</option>
+                                  </select>
+                                  <button
+                                    onClick={() => addCollaborator(folder.id)}
+                                    className="rounded-lg bg-brand-blue text-white px-3 py-1.5 text-xs font-display font-bold hover:bg-brand-dark-blue transition-colors"
+                                  >
+                                    Invite
+                                  </button>
+                                </div>
+                                {inviteError && (
+                                  <p className="mt-1 text-[10px] text-brand-dark-burgundy font-body">{inviteError}</p>
+                                )}
                               </div>
-                            </div>
+                            ) : (
+                              <p className="text-[10px] text-muted font-body">Only folder owners can invite collaborators.</p>
+                            )}
 
                             {/* Share link */}
                             <button

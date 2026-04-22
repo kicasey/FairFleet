@@ -21,6 +21,7 @@ public record FlightSearchDto(
 );
 public record SaveFlightDto(string FlightData, string Route, string AirlineCode, string AirlineName, string DepartureDate, decimal TotalPrice, decimal BaseFare, decimal BagFees, decimal SeatFees, int? FolderId);
 public record AlertConfigDto(bool PriceAlertEnabled, decimal? PriceDropThreshold, decimal? PriceRiseThreshold, string AlertFrequency);
+public record SavedFlightFolderDto(int? FolderId);
 public record CreateFolderDto(string Name);
 public record InviteCollaboratorDto(string Email, string Permission);
 

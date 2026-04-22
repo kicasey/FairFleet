@@ -155,6 +155,7 @@ export interface Folder {
   id: number;
   name: string;
   flightCount: number;
+  isOwner?: boolean;
   collaborators: { id: number; name: string; permission: 'view' | 'edit' }[];
   shareToken: string;
   flights: SavedFlight[];

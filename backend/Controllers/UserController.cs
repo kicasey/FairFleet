@@ -23,12 +23,19 @@ public class UserController : ControllerBase
     {
         var clerkUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(clerkUserId)) return null;
+        var emailFromToken = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.ClerkUserId == clerkUserId);
         if (user == null)
         {
-            user = new User { ClerkUserId = clerkUserId };
+            user = new User { ClerkUserId = clerkUserId, Email = emailFromToken };
             _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(emailFromToken) && !string.Equals(user.Email, emailFromToken, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Email = emailFromToken;
+            user.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -118,7 +125,7 @@ public class UserController : ControllerBase
         var status = await _db.AirlineLoyaltyStatuses
             .FirstOrDefaultAsync(s => s.Id == id && s.UserId == user.Id);
 
-        if (status == null) return NotFound();
+        if (status == null) return NotFound(new { message = "Loyalty status was not found for this account." });
 
         _db.AirlineLoyaltyStatuses.Remove(status);
         await _db.SaveChangesAsync();
