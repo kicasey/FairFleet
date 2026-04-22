@@ -62,6 +62,19 @@ const AIRLINE_LIST = [
 ];
 const MAX_LAYOVER_OPTIONS = ['Any', '2h', '4h', '6h', '8h'];
 
+const POPULAR_DESTINATIONS = ['LAX', 'JFK', 'MIA', 'ORD', 'DEN', 'SEA', 'BOS', 'LAS', 'SFO', 'DFW'];
+
+function tomorrowISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function randomDestination(exclude: string): string {
+  const pool = POPULAR_DESTINATIONS.filter((c) => c !== exclude);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function toBucket(label: string): string {
   switch (label.toLowerCase()) {
     case 'red-eye':
@@ -223,30 +236,33 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
   }, []);
 
   function handleSearch() {
-    const normalizedFrom = fromCode.trim().toUpperCase();
-    const normalizedTo = toCode.trim().toUpperCase();
+    const rawFrom = fromCode.trim().toUpperCase();
+    const rawTo = toCode.trim().toUpperCase();
 
-    if (!getAirport(normalizedFrom)) {
+    if (rawFrom && !getAirport(rawFrom)) {
       setSearchError('Enter a valid 3-letter departure airport code.');
       return;
     }
 
-    if (!getAirport(normalizedTo)) {
+    if (rawTo && !getAirport(rawTo)) {
       setSearchError('Enter a valid 3-letter destination airport code.');
       return;
     }
 
+    const normalizedFrom = rawFrom || 'ATL';
+    let normalizedTo = rawTo || randomDestination(normalizedFrom);
     if (normalizedFrom === normalizedTo) {
-      setSearchError('Departure and destination airports must be different.');
-      return;
+      normalizedTo = randomDestination(normalizedFrom);
     }
+
+    const resolvedDate = departureDate || tomorrowISO();
 
     setSearchError(null);
 
     const params: SearchParams = {
       from: normalizedFrom,
       to: normalizedTo,
-      departureDate,
+      departureDate: resolvedDate,
       returnDate,
       roundTrip,
       flexible,
@@ -264,9 +280,9 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       onSearch(params);
     } else {
       const query = new URLSearchParams();
-      if (normalizedFrom) query.set('from', normalizedFrom);
-      if (normalizedTo) query.set('to', normalizedTo);
-      if (departureDate) query.set('date', departureDate);
+      query.set('from', normalizedFrom);
+      query.set('to', normalizedTo);
+      query.set('date', resolvedDate);
       if (roundTrip && returnDate) query.set('returnDate', returnDate);
       query.set('roundTrip', String(roundTrip));
       query.set('flexibleDates', String(flexible));

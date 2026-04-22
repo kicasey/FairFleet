@@ -3,13 +3,21 @@
 import Navbar from '@/components/Navbar';
 import SearchBox from '@/components/SearchBox';
 import QuizFlow from '@/components/QuizFlow';
-import { fetchExploreDestinations } from '@/lib/api';
+import { fetchExploreDestinations, fetchFlights } from '@/lib/api';
 import { getDestinationPhotoSync } from '@/lib/unsplash';
-import type { Destination } from '@/lib/types';
+import type { Destination, Flight } from '@/lib/types';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Plane } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+
+const POPULAR_DESTINATIONS = ['LAX', 'JFK', 'MIA', 'ORD', 'DEN', 'SEA', 'BOS', 'LAS'];
+
+function tomorrowISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 const cardGradients = [
   'from-brand-dark-blue to-brand-blue',
@@ -25,6 +33,7 @@ const cardGradients = [
 export default function Home() {
   const [mode, setMode] = useState<'destination' | 'quiz'>('destination');
   const [deals, setDeals] = useState<Destination[]>([]);
+  const [todayFlights, setTodayFlights] = useState<Flight[]>([]);
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -38,6 +47,15 @@ export default function Home() {
       .then((data) => setDeals(data.slice(0, 8)))
       .catch((err) => console.error('Failed to load explore destinations:', err));
   }, []);
+
+  useEffect(() => {
+    const dest = POPULAR_DESTINATIONS[Math.floor(Math.random() * POPULAR_DESTINATIONS.length)];
+    fetchFlights({ from: 'ATL', to: dest, date: tomorrowISO(), cabinClass: 'economy', passengers: 1 })
+      .then((flights) => setTodayFlights(flights.slice(0, 4)))
+      .catch((err) => console.error('Failed to load today\'s flights:', err));
+  }, []);
+
+  const todayFlightsDest = todayFlights[0]?.destination ?? '';
 
   return (
     <div className="min-h-screen bg-off">
@@ -89,8 +107,45 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Flights taking off tomorrow */}
+      {todayFlights.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-24 pb-4">
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="font-display font-bold text-xl text-ink">
+              Flights taking off tomorrow · ATL → {todayFlightsDest}
+            </h2>
+            <Link
+              href={`/search?from=ATL&to=${todayFlightsDest}&date=${tomorrowISO()}`}
+              className="text-sm font-body font-semibold text-brand-blue hover:text-brand-dark-blue"
+            >
+              See all →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {todayFlights.map((f) => (
+              <Link
+                key={f.id}
+                href={`/search?from=ATL&to=${todayFlightsDest}&date=${tomorrowISO()}`}
+                className="rounded-xl bg-paper border border-border p-4 hover:-translate-y-1 transition-transform duration-200 shadow-sm hover:shadow-md"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-display font-bold text-sm text-ink">{f.airline}</span>
+                  <span className="font-display font-black text-brand-blue">${Math.round(f.totalPrice)}</span>
+                </div>
+                <p className="text-xs text-muted font-body">
+                  {f.departureTime} → {f.arrivalTime} · {f.duration}
+                </p>
+                <p className="text-xs text-muted font-body mt-0.5">
+                  {f.stops === 0 ? 'Nonstop' : `${f.stops} stop${f.stops > 1 ? 's' : ''}`}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Live Deals */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-24 pb-16">
+      <section className={`mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16 ${todayFlights.length > 0 ? 'pt-8' : 'pt-24'}`}>
         <h2 className="font-display font-bold text-xl text-ink mb-6">
           Cheapest from ATL right now
         </h2>

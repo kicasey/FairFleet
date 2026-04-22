@@ -553,8 +553,8 @@ export default function ExplorePage() {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute z-30 w-[260px] rounded-[14px] overflow-hidden shadow-xl border border-border bg-paper"
-                      style={{ left: popupPos.x, top: popupPos.y }}
+                      className="absolute z-40 w-[260px] rounded-[14px] overflow-hidden shadow-xl border border-border bg-paper"
+                      style={{ left: popupPos.x, top: popupPos.y, cursor: 'auto' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       {/* Photo header */}

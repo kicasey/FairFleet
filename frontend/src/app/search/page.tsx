@@ -39,6 +39,17 @@ const TIME_OPTIONS = [
   { value: 'redeye', label: 'Red-eye', sub: '9pm – 6am' },
 ];
 
+const BASE_AIRLINES = [
+  'Delta',
+  'American',
+  'United',
+  'Southwest',
+  'Spirit',
+  'Frontier',
+  'JetBlue',
+  'Alaska',
+];
+
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -110,7 +121,7 @@ function SearchResults() {
   }, [from, to, date, returnDate, roundTrip, flexibleDates, flexibleDays, cabin, passengers, children, bags, checkedBags, maxStops, airlines, departureTimeBuckets, maxLayoverMinutes]);
 
   const allAirlines = useMemo(
-    () => [...new Set(flights.map((f) => f.airline))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set([...BASE_AIRLINES, ...flights.map((f) => f.airline)])].sort((a, b) => a.localeCompare(b)),
     [flights],
   );
 

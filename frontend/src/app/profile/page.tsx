@@ -361,130 +361,140 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-sm text-ink">Preferences</h2>
                 <button
-                  onClick={() => setShowEditPrefs(!showEditPrefs)}
-                  className="flex items-center gap-1 text-xs text-brand-blue hover:text-brand-dark-blue font-body transition-colors"
+                  onClick={() => {
+                    setShowEditPrefs(!showEditPrefs);
+                    setPrefsSaveMessage(null);
+                  }}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-display font-bold transition-colors ${
+                    showEditPrefs
+                      ? 'bg-off text-muted hover:text-ink'
+                      : 'bg-brand-blue text-white hover:bg-brand-dark-blue'
+                  }`}
                 >
                   <Settings size={14} />
-                  Edit Preferences
+                  {showEditPrefs ? 'Done' : 'Edit Preferences'}
                 </button>
               </div>
 
-              <div className="space-y-2.5">
-                <PrefRow icon={<MapPin size={14} />} label="Home airport">
-                  <Chip color="blue">{dbUser?.homeAirportCode ?? '—'}</Chip>
-                </PrefRow>
-                <PrefRow icon={<Briefcase size={14} />} label="Default class">
-                  <Chip color="blue">{(dbUser?.defaultCabinClass ?? 'economy').replace('_', ' ')}</Chip>
-                </PrefRow>
-                <PrefRow icon={<Briefcase size={14} />} label="Usual bags">
-                  <Chip color="gray">
-                    {(() => {
-                      try {
-                        const bagPref = dbUser?.defaultBags ? JSON.parse(dbUser.defaultBags) as { bag?: string } : null;
-                        if (bagPref?.bag === 'checked') return 'Checked';
-                        if (bagPref?.bag === 'personal_only') return 'Personal only';
-                        return 'Personal + Carry-on';
-                      } catch {
-                        return 'Personal + Carry-on';
-                      }
-                    })()}
-                  </Chip>
-                </PrefRow>
-                <PrefRow icon={<Bell size={14} />} label="Phone">
-                  <span className="text-sm font-body text-ink">{dbUser?.phoneNumber ?? '—'}</span>
-                </PrefRow>
-                <PrefRow icon={<Bell size={14} />} label="Price alerts">
+              {showEditPrefs ? (
+                <div className="space-y-3 rounded-lg border border-border bg-off/40 p-3">
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Home airport</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ATL"
+                      value={prefHomeAirport}
+                      onChange={(e) => setPrefHomeAirport(e.target.value.toUpperCase())}
+                      list="home-airport-options"
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    />
+                  </label>
+                  <datalist id="home-airport-options">
+                    {airports.map((airport) => (
+                      <option
+                        key={airport.code}
+                        value={airport.code}
+                        label={`${airport.city} - ${airport.name}`}
+                      />
+                    ))}
+                  </datalist>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Default cabin class</span>
+                    <select
+                      value={prefDefaultClass}
+                      onChange={(e) => setPrefDefaultClass(e.target.value as 'economy' | 'premium_economy' | 'business' | 'first')}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    >
+                      <option value="economy">Economy</option>
+                      <option value="premium_economy">Premium Economy</option>
+                      <option value="business">Business</option>
+                      <option value="first">First</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Usual bags</span>
+                    <select
+                      value={prefUsualBag}
+                      onChange={(e) => setPrefUsualBag(e.target.value as 'personal_carryon' | 'checked' | 'personal_only')}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    >
+                      <option value="personal_carryon">Personal + Carry-on</option>
+                      <option value="checked">Checked bag</option>
+                      <option value="personal_only">Personal only</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-display font-bold uppercase tracking-wider text-muted">Phone number</span>
+                    <input
+                      type="text"
+                      placeholder="+1 (555) 555-5555"
+                      value={prefPhoneNumber}
+                      onChange={(e) => setPrefPhoneNumber(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                    />
+                  </label>
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-paper px-3 py-2">
+                    <span className="text-xs text-muted font-body">Price alerts</span>
+                    <button
+                      onClick={() => setAlertsOn(!alertsOn)}
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-display font-bold transition-colors ${
+                        alertsOn
+                          ? 'border-brand-dark-green bg-brand-light-green text-brand-dark-green'
+                          : 'border-border bg-off text-muted'
+                      }`}
+                    >
+                      {alertsOn ? 'On' : 'Off'}
+                    </button>
+                  </div>
                   <button
-                    onClick={() => setAlertsOn(!alertsOn)}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-display font-bold transition-colors ${
-                      alertsOn
-                        ? 'bg-brand-light-green text-brand-dark-green'
-                        : 'bg-off text-muted'
-                    }`}
+                    onClick={savePreferences}
+                    className="w-full rounded-full bg-brand-blue py-2 text-sm font-display font-bold text-white hover:bg-brand-dark-blue transition-colors"
                   >
-                    {alertsOn ? 'On' : 'Off'}
+                    Save Preferences
                   </button>
-                </PrefRow>
-              </div>
-
-              <AnimatePresence>
-                {showEditPrefs && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-4 space-y-3 rounded-lg border border-border bg-off/40 p-3">
-                      <input
-                        type="text"
-                        placeholder="Select home airport"
-                        value={prefHomeAirport}
-                        onChange={(e) => setPrefHomeAirport(e.target.value.toUpperCase())}
-                        list="home-airport-options"
-                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
-                      />
-                      <datalist id="home-airport-options">
-                        {airports.map((airport) => (
-                          <option
-                            key={airport.code}
-                            value={airport.code}
-                            label={`${airport.city} - ${airport.name}`}
-                          />
-                        ))}
-                      </datalist>
-                      <select
-                        value={prefDefaultClass}
-                        onChange={(e) => setPrefDefaultClass(e.target.value as 'economy' | 'premium_economy' | 'business' | 'first')}
-                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
-                      >
-                        <option value="economy">Economy</option>
-                        <option value="premium_economy">Premium Economy</option>
-                        <option value="business">Business</option>
-                        <option value="first">First</option>
-                      </select>
-                      <select
-                        value={prefUsualBag}
-                        onChange={(e) => setPrefUsualBag(e.target.value as 'personal_carryon' | 'checked' | 'personal_only')}
-                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
-                      >
-                        <option value="personal_carryon">Personal + Carry-on</option>
-                        <option value="checked">Checked bag</option>
-                        <option value="personal_only">Personal only</option>
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Phone number"
-                        value={prefPhoneNumber}
-                        onChange={(e) => setPrefPhoneNumber(e.target.value)}
-                        className="w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm font-body text-ink"
-                      />
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-paper px-3 py-2">
-                        <span className="text-xs text-muted font-body">Price alerts</span>
-                        <button
-                          onClick={() => setAlertsOn(!alertsOn)}
-                          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-display font-bold transition-colors ${
-                            alertsOn
-                              ? 'border-brand-dark-green bg-brand-light-green text-brand-dark-green'
-                              : 'border-border bg-off text-muted'
-                          }`}
-                        >
-                          {alertsOn ? 'On' : 'Off'}
-                        </button>
-                      </div>
-                      <button
-                        onClick={savePreferences}
-                        className="w-full rounded-full bg-brand-blue py-2 text-sm font-display font-bold text-white"
-                      >
-                        Save Preferences
-                      </button>
-                      {prefsSaveMessage && (
-                        <p className="text-xs font-body text-muted">{prefsSaveMessage}</p>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  {prefsSaveMessage && (
+                    <p className="text-center text-xs font-body text-brand-dark-green">{prefsSaveMessage}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <PrefRow icon={<MapPin size={14} />} label="Home airport">
+                    <Chip color="blue">{dbUser?.homeAirportCode ?? '—'}</Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Briefcase size={14} />} label="Default class">
+                    <Chip color="blue">{(dbUser?.defaultCabinClass ?? 'economy').replace('_', ' ')}</Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Briefcase size={14} />} label="Usual bags">
+                    <Chip color="gray">
+                      {(() => {
+                        try {
+                          const bagPref = dbUser?.defaultBags ? JSON.parse(dbUser.defaultBags) as { bag?: string } : null;
+                          if (bagPref?.bag === 'checked') return 'Checked';
+                          if (bagPref?.bag === 'personal_only') return 'Personal only';
+                          return 'Personal + Carry-on';
+                        } catch {
+                          return 'Personal + Carry-on';
+                        }
+                      })()}
+                    </Chip>
+                  </PrefRow>
+                  <PrefRow icon={<Bell size={14} />} label="Phone">
+                    <span className="text-sm font-body text-ink">{dbUser?.phoneNumber ?? '—'}</span>
+                  </PrefRow>
+                  <PrefRow icon={<Bell size={14} />} label="Price alerts">
+                    <button
+                      onClick={() => setAlertsOn(!alertsOn)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-display font-bold transition-colors ${
+                        alertsOn
+                          ? 'bg-brand-light-green text-brand-dark-green'
+                          : 'bg-off text-muted'
+                      }`}
+                    >
+                      {alertsOn ? 'On' : 'Off'}
+                    </button>
+                  </PrefRow>
+                </div>
+              )}
             </div>
 
             {/* Airline Loyalty Status */}
