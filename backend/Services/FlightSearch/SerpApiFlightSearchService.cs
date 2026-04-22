@@ -103,7 +103,6 @@ public class SerpApiFlightSearchService : IFlightSearchService
             var price = item.TryGetProperty("price", out var priceEl) && priceEl.ValueKind == JsonValueKind.Number
                 ? priceEl.GetDecimal()
                 : 0m;
-            var airline = item.TryGetProperty("airline", out var airlineEl) ? airlineEl.GetString() ?? "Unknown" : "Unknown";
             var flights = item.TryGetProperty("flights", out var flightsEl) && flightsEl.ValueKind == JsonValueKind.Array
                 ? flightsEl.EnumerateArray().ToList()
                 : new List<JsonElement>();
@@ -114,9 +113,12 @@ public class SerpApiFlightSearchService : IFlightSearchService
             }
 
             var first = flights[0];
+            var airline = first.TryGetProperty("airline", out var firstAirlineEl) && !string.IsNullOrWhiteSpace(firstAirlineEl.GetString())
+                ? firstAirlineEl.GetString()!
+                : (item.TryGetProperty("airline", out var airlineEl) ? airlineEl.GetString() ?? "Unknown" : "Unknown");
             var airlineCode = first.TryGetProperty("airline_logo", out var logoEl)
                 ? GetAirlineCodeFromLogo(logoEl.GetString())
-                : (first.TryGetProperty("airline", out var firstAirline) ? GetCodeFromAirlineName(firstAirline.GetString()) : "NA");
+                : GetCodeFromAirlineName(airline);
             var originCity = TryGetAirportCity(first, "departure_airport", dto.From);
             var destinationCity = TryGetAirportCity(flights[^1], "arrival_airport", dto.To);
 
@@ -197,7 +199,7 @@ public class SerpApiFlightSearchService : IFlightSearchService
                 TotalPrice: totalPrice,
                 FareClass: fareMap.StandardLabel,
                 ProprietaryFareClass: fareMap.ProprietaryTerm,
-                BookingUrl: "https://www.google.com/travel/flights",
+                BookingUrl: BuildBookingUrl(airlineCode, dto.From, dto.To, departDate, dto.ReturnDate, Math.Max(1, dto.Passengers)),
                 MilesEquivalent: (int)Math.Round(totalPrice * 78),
                 StopCities: stopCities,
                 Segments: segments,
@@ -358,6 +360,23 @@ public class SerpApiFlightSearchService : IFlightSearchService
             CarryOnIncluded = true,
             CheckedBagIncluded = false,
             SeatSelectionIncluded = false
+        };
+    }
+
+    private static string BuildBookingUrl(string airlineCode, string origin, string destination, string departDate, string? returnDate, int passengers)
+    {
+        var isRound = !string.IsNullOrWhiteSpace(returnDate);
+        return airlineCode.ToUpperInvariant() switch
+        {
+            "DL" => $"https://www.delta.com/flight-search/book-a-flight?action=findFlights&tripType={(isRound ? "ROUND_TRIP" : "ONE_WAY")}&from={origin}&to={destination}&departureDate={departDate}{(isRound ? $"&returnDate={returnDate}" : "")}&paxCount={passengers}&cabinClass=COACH",
+            "AA" => $"https://www.aa.com/booking/find-flights?tripType={(isRound ? "roundTrip" : "oneWay")}&originAirport={origin}&destinationAirport={destination}&departDate={departDate}{(isRound ? $"&returnDate={returnDate}" : "")}&adultCount={passengers}",
+            "UA" => $"https://www.united.com/en/us/fsr/choose-flights?f={origin}&t={destination}&d={departDate}{(isRound ? $"&r={returnDate}" : "")}&px={passengers}&taxng=1&idx=1",
+            "WN" => $"https://www.southwest.com/air/booking/select.html?originationAirportCode={origin}&destinationAirportCode={destination}&departureDate={departDate}{(isRound ? $"&returnDate={returnDate}" : "")}&adultPassengersCount={passengers}&tripType={(isRound ? "roundtrip" : "oneway")}",
+            "NK" => $"https://www.spirit.com/book/flights?orgCode={origin}&desCode={destination}&departDate={departDate}&numAdt={passengers}&tripType={(isRound ? "RT" : "OW")}",
+            "F9" => "https://www.flyfrontier.com/",
+            "B6" => $"https://www.jetblue.com/booking/flights?from={origin}&to={destination}&depart={departDate}{(isRound ? $"&return={returnDate}" : "")}&pax={passengers}&isMultiCity=false",
+            "AS" => $"https://www.alaskaair.com/shopping/flights?A={passengers}&type={(isRound ? "RT" : "OW")}&O={origin}&D={destination}&OD={departDate}{(isRound ? $"&RD={returnDate}" : "")}",
+            _ => $"https://www.google.com/travel/flights?q=flights+from+{origin}+to+{destination}+on+{departDate}",
         };
     }
 
