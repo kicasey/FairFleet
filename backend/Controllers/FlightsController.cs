@@ -17,7 +17,7 @@ public class FlightsController : ControllerBase
     private readonly IFlightSearchService _flightSearchService;
     private readonly IMemoryCache _cache;
 
-    private static readonly TimeSpan ExploreCacheTtl = TimeSpan.FromHours(1);
+    private static readonly TimeSpan ExploreCacheTtl = TimeSpan.FromHours(6);
     private const string ExploreCacheKeyPrefix = "explore:";
     private const string ExploreWarmOriginsKey = "explore:warm-origins";
 
@@ -104,7 +104,13 @@ public class FlightsController : ControllerBase
         }
 
         var departDate = DateTime.UtcNow.AddDays(21).ToString("yyyy-MM-dd");
-        var targets = new[] { "LAX", "JFK", "ORD", "MIA", "DFW", "SEA", "CUN", "LHR" };
+        var targets = new[]
+        {
+            "LAX", "JFK", "ORD", "MIA", "DFW", "SEA",
+            "CUN", "LHR", "CDG", "AMS", "FCO", "MAD",
+            "NRT", "ICN", "MEX", "YYZ",
+            "NAS", "MBJ", "SJU", "PUJ"
+        };
         var allFlights = new List<ApiFlightDto>();
 
         foreach (var target in targets)
@@ -318,6 +324,18 @@ public class FlightsController : ControllerBase
             ["DFW"] = ("Dallas", "United States", 32.8998, -97.0403, "North America", ["Food", "Culture"], 79, "Clear"),
             ["SEA"] = ("Seattle", "United States", 47.4502, -122.3088, "North America", ["Nature", "Food"], 55, "Rainy"),
             ["CUN"] = ("Cancun", "Mexico", 21.0365, -86.8771, "North America", ["Beach", "Resort"], 87, "Sunny"),
-            ["LHR"] = ("London", "United Kingdom", 51.4700, -0.4543, "Europe", ["History", "Culture"], 56, "Overcast")
+            ["LHR"] = ("London", "United Kingdom", 51.4700, -0.4543, "Europe", ["History", "Culture"], 56, "Overcast"),
+            ["CDG"] = ("Paris", "France", 49.0097, 2.5479, "Europe", ["Culture", "Food"], 60, "Cloudy"),
+            ["AMS"] = ("Amsterdam", "Netherlands", 52.3105, 4.7683, "Europe", ["Culture", "Nightlife"], 54, "Rainy"),
+            ["FCO"] = ("Rome", "Italy", 41.8003, 12.2389, "Europe", ["History", "Food"], 68, "Sunny"),
+            ["MAD"] = ("Madrid", "Spain", 40.4719, -3.5626, "Europe", ["Culture", "Food"], 70, "Clear"),
+            ["NRT"] = ("Tokyo", "Japan", 35.7647, 140.3864, "Asia", ["Culture", "Food"], 65, "Partly Cloudy"),
+            ["ICN"] = ("Seoul", "South Korea", 37.4602, 126.4407, "Asia", ["Culture", "Food"], 63, "Clear"),
+            ["MEX"] = ("Mexico City", "Mexico", 19.4363, -99.0721, "North America", ["Culture", "Food"], 75, "Sunny"),
+            ["YYZ"] = ("Toronto", "Canada", 43.6777, -79.6248, "North America", ["Culture", "Food"], 50, "Cloudy"),
+            ["NAS"] = ("Nassau", "Bahamas", 25.0389, -77.4662, "North America", ["Beach", "Resort"], 82, "Sunny"),
+            ["MBJ"] = ("Montego Bay", "Jamaica", 18.5037, -77.9134, "North America", ["Beach", "Resort"], 85, "Sunny"),
+            ["SJU"] = ("San Juan", "Puerto Rico", 18.4394, -66.0018, "North America", ["Beach", "Culture"], 84, "Sunny"),
+            ["PUJ"] = ("Punta Cana", "Dominican Republic", 18.5674, -68.3634, "North America", ["Beach", "Resort"], 86, "Sunny")
         };
 }
