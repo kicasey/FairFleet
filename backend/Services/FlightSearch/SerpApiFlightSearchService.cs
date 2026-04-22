@@ -56,13 +56,15 @@ public class SerpApiFlightSearchService : IFlightSearchService
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
+            var priceHistory = ParsePriceInsights(doc.RootElement);
+
             if (doc.RootElement.TryGetProperty("best_flights", out var bestFlights))
             {
-                allFlights.AddRange(ParseFlightGroup(bestFlights, dto, day, fareMaps));
+                allFlights.AddRange(ParseFlightGroup(bestFlights, dto, day, fareMaps, priceHistory));
             }
             if (doc.RootElement.TryGetProperty("other_flights", out var otherFlights))
             {
-                allFlights.AddRange(ParseFlightGroup(otherFlights, dto, day, fareMaps));
+                allFlights.AddRange(ParseFlightGroup(otherFlights, dto, day, fareMaps, priceHistory));
             }
         }
 
@@ -96,7 +98,7 @@ public class SerpApiFlightSearchService : IFlightSearchService
         return flights;
     }
 
-    private static IEnumerable<ApiFlightDto> ParseFlightGroup(JsonElement group, FlightSearchDto dto, string departDate, List<AirlineFareClassMap> fareMaps)
+    private static IEnumerable<ApiFlightDto> ParseFlightGroup(JsonElement group, FlightSearchDto dto, string departDate, List<AirlineFareClassMap> fareMaps, List<ApiPricePointDto>? realPriceHistory)
     {
         foreach (var item in group.EnumerateArray())
         {
@@ -170,7 +172,7 @@ public class SerpApiFlightSearchService : IFlightSearchService
             var baseFare = decimal.Round(price * 0.82m, 2);
             var taxes = decimal.Round(price - baseFare, 2);
             var totalPrice = decimal.Round(baseFare + taxes + bagFees + seatFees, 2);
-            var priceHistory = BuildPriceHistory(price);
+            var priceHistory = realPriceHistory is { Count: > 0 } ? realPriceHistory : BuildPriceHistory(price);
             var stopCities = segments.Skip(1).Select(s => s.DepartureAirport).Distinct().ToList();
 
             yield return new ApiFlightDto(
@@ -218,6 +220,28 @@ public class SerpApiFlightSearchService : IFlightSearchService
             var factor = 0.9m + ((29 - i) * 0.006m);
             var price = decimal.Round(basePrice * factor, 2);
             points.Add(new ApiPricePointDto(date, price));
+        }
+        return points;
+    }
+
+    private static List<ApiPricePointDto>? ParsePriceInsights(JsonElement root)
+    {
+        if (!root.TryGetProperty("price_insights", out var insights) ||
+            !insights.TryGetProperty("price_history", out var history) ||
+            history.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var points = new List<ApiPricePointDto>();
+        foreach (var pair in history.EnumerateArray())
+        {
+            if (pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 2) continue;
+            var tsEl = pair[0];
+            var priceEl = pair[1];
+            if (tsEl.ValueKind != JsonValueKind.Number || priceEl.ValueKind != JsonValueKind.Number) continue;
+            var date = DateTimeOffset.FromUnixTimeSeconds(tsEl.GetInt64()).UtcDateTime.ToString("yyyy-MM-dd");
+            points.Add(new ApiPricePointDto(date, priceEl.GetDecimal()));
         }
         return points;
     }
