@@ -24,6 +24,9 @@ interface SearchBoxProps {
   onSearch?: (params: SearchParams) => void;
   onSurpriseMe?: () => void;
   compact?: boolean;
+  initialFrom?: string;
+  initialTo?: string;
+  initialDate?: string;
 }
 
 interface SearchParams {
@@ -197,18 +200,26 @@ function AirportInput({
   );
 }
 
-export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<SearchBoxProps>) {
+export default function SearchBox({ onSearch, onSurpriseMe, compact, initialFrom, initialTo, initialDate }: Readonly<SearchBoxProps>) {
   const router = useRouter();
   const { getToken } = useAuth();
   const { isLoaded, isSignedIn } = useUser();
   const [activeTab, setActiveTab] = useState<'destination' | 'explore' | 'surprise'>('destination');
 
   const [homeAirport, setHomeAirport] = useState<string | null>(null);
-  const [fromCode, setFromCode] = useState('');
-  const [fromDisplay, setFromDisplay] = useState('');
-  const [toCode, setToCode] = useState('');
-  const [toDisplay, setToDisplay] = useState('');
-  const [departureDate, setDepartureDate] = useState('');
+  const [fromCode, setFromCode] = useState(initialFrom ?? '');
+  const [fromDisplay, setFromDisplay] = useState(() => {
+    if (!initialFrom) return '';
+    const a = getAirport(initialFrom);
+    return a ? `${a.code} – ${a.city}` : initialFrom;
+  });
+  const [toCode, setToCode] = useState(initialTo ?? '');
+  const [toDisplay, setToDisplay] = useState(() => {
+    if (!initialTo) return '';
+    const a = getAirport(initialTo);
+    return a ? `${a.code} – ${a.city}` : initialTo;
+  });
+  const [departureDate, setDepartureDate] = useState(initialDate ?? '');
   const [returnDate, setReturnDate] = useState('');
   const [roundTrip, setRoundTrip] = useState(false);
   const [flexible, setFlexible] = useState(false);

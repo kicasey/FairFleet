@@ -13,6 +13,7 @@ import {
   X,
   Lightbulb,
 } from 'lucide-react';
+import SearchBox from './SearchBox';
 
 interface SearchSummary {
   from: string;
@@ -51,33 +52,15 @@ export default function Navbar({ searchSummary }: Readonly<NavbarProps>) {
             </span>
           </Link>
 
-          {/* Compact search summary (results page) */}
+          {/* Compact search bar (results page) */}
           {searchSummary && (
-            <div className="hidden lg:flex items-center gap-2 rounded-full bg-off px-4 py-1.5 text-xs font-body text-muted border border-border ml-6">
-              <span className="font-semibold text-ink">
-                {searchSummary.from}
-              </span>
-              <Plane className="h-3 w-3 text-brand-teal" />
-              <span className="font-semibold text-ink">
-                {searchSummary.to}
-              </span>
-              <span className="mx-1 text-border">|</span>
-              <span>{searchSummary.date}</span>
-              <span className="mx-1 text-border">|</span>
-              <span>{searchSummary.passengers}</span>
-              {searchSummary.cabin && (
-                <>
-                  <span className="rounded-full bg-brand-light-blue px-2 py-0.5 text-[8px] font-display font-bold uppercase tracking-wider text-brand-dark-blue">
-                    {searchSummary.cabin}
-                  </span>
-                </>
-              )}
-              {searchSummary.bags && (
-                <span className="rounded-full bg-brand-light-green px-2 py-0.5 text-[8px] font-display font-bold uppercase tracking-wider text-brand-dark-green">
-                  {searchSummary.bags}
-                </span>
-              )}
-              <Link href="/" className="text-brand-blue font-semibold ml-1 hover:underline">Edit</Link>
+            <div className="hidden lg:block ml-6 flex-1 max-w-xl">
+              <SearchBox
+                compact
+                initialFrom={searchSummary.from || undefined}
+                initialTo={searchSummary.to || undefined}
+                initialDate={searchSummary.date || undefined}
+              />
             </div>
           )}
 
@@ -136,12 +119,13 @@ export default function Navbar({ searchSummary }: Readonly<NavbarProps>) {
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-paper px-4 pb-4 pt-2">
           {searchSummary && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-off px-3 py-2 text-xs font-body text-muted border border-border mb-3">
-              <span className="font-semibold text-ink">{searchSummary.from}</span>
-              <Plane className="h-3 w-3 text-brand-teal" />
-              <span className="font-semibold text-ink">{searchSummary.to}</span>
-              <span className="mx-1 text-border">|</span>
-              <span>{searchSummary.date}</span>
+            <div className="mb-3">
+              <SearchBox
+                compact
+                initialFrom={searchSummary.from || undefined}
+                initialTo={searchSummary.to || undefined}
+                initialDate={searchSummary.date || undefined}
+              />
             </div>
           )}
 
