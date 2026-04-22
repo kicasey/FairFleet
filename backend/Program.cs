@@ -28,6 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 builder.Services.AddHttpClient<IFlightSearchService, SerpApiFlightSearchService>();
 builder.Services.AddScoped<INotificationSender, NotificationSender>();
+builder.Services.AddMemoryCache();
 var enableAlertMonitor = builder.Configuration.GetValue<bool>("Features:EnableAlertMonitor");
 if (enableAlertMonitor)
 {

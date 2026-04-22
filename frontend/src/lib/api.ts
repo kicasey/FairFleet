@@ -89,6 +89,11 @@ export async function fetchExploreDestinations(from = 'ATL'): Promise<Destinatio
   return res.destinations ?? [];
 }
 
+export async function fetchDeals(): Promise<Destination[]> {
+  const res = await apiFetch<{ destinations: Destination[] }>(`/flights/deals`);
+  return res.destinations ?? [];
+}
+
 export async function fetchFlightById(id: string): Promise<Flight> {
   return apiFetch<Flight>(`/flights/${id}`);
 }

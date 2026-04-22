@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using FairFleetAPI.Data;
 using FairFleetAPI.DTOs;
 using FairFleetAPI.Services.FlightSearch;
@@ -14,11 +15,17 @@ public class FlightsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IFlightSearchService _flightSearchService;
+    private readonly IMemoryCache _cache;
 
-    public FlightsController(AppDbContext db, IFlightSearchService flightSearchService)
+    private static readonly TimeSpan ExploreCacheTtl = TimeSpan.FromHours(1);
+    private const string ExploreCacheKeyPrefix = "explore:";
+    private const string ExploreWarmOriginsKey = "explore:warm-origins";
+
+    public FlightsController(AppDbContext db, IFlightSearchService flightSearchService, IMemoryCache cache)
     {
         _db = db;
         _flightSearchService = flightSearchService;
+        _cache = cache;
     }
 
     [HttpGet("search")]
@@ -55,23 +62,61 @@ public class FlightsController : ControllerBase
     public async Task<ActionResult> Explore([FromQuery] string? from, CancellationToken cancellationToken)
     {
         var origin = string.IsNullOrWhiteSpace(from) ? "ATL" : from.ToUpperInvariant();
-        var departDate = DateTime.UtcNow.AddDays(21).ToString("yyyy-MM-dd");
-        var targets = new[] { "LAX", "JFK", "ORD", "MIA", "DFW", "SEA", "CUN", "LHR" };
-        var allFlights = new List<ApiFlightDto>();
-
         try
         {
-            foreach (var target in targets)
+            var result = await GetExploreDestinationsCachedAsync(origin, cancellationToken);
+            return Ok(new
             {
-                var dto = new FlightSearchDto(origin, target, departDate, null, 1, "economy");
-                var normalized = NormalizeSearchDto(dto);
-                var flights = await _flightSearchService.SearchAsync(normalized, cancellationToken);
-                allFlights.AddRange(flights);
-            }
+                destinations = result.Destinations.Select(ProjectDestination).ToList(),
+                from = origin,
+                hydratedFrom = result.FromCache ? "cache" : "serpapi",
+                resultCount = result.Destinations.Count
+            });
         }
         catch (InvalidOperationException ex)
         {
             return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
+
+    private static object ProjectDestination(ExploreDestination d) => new
+    {
+        code = d.Code,
+        city = d.City,
+        country = d.Country,
+        lat = d.Lat,
+        lng = d.Lng,
+        cheapestPrice = d.CheapestPrice,
+        flightTime = d.FlightTime,
+        weather = new { temp = d.Temp, condition = d.Condition },
+        tags = d.Tags,
+        continent = d.Continent,
+        origin = d.Origin
+    };
+
+    private async Task<(List<ExploreDestination> Destinations, bool FromCache)> GetExploreDestinationsCachedAsync(
+        string origin, CancellationToken cancellationToken)
+    {
+        var cacheKey = ExploreCacheKeyPrefix + origin;
+        if (_cache.TryGetValue<List<ExploreDestination>>(cacheKey, out var cached) && cached is not null)
+        {
+            return (cached, true);
+        }
+
+        var departDate = DateTime.UtcNow.AddDays(21).ToString("yyyy-MM-dd");
+        var targets = new[] { "LAX", "JFK", "ORD", "MIA", "DFW", "SEA", "CUN", "LHR" };
+        var allFlights = new List<ApiFlightDto>();
+
+        foreach (var target in targets)
+        {
+            if (string.Equals(target, origin, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var dto = new FlightSearchDto(origin, target, departDate, null, 1, "economy");
+            var normalized = NormalizeSearchDto(dto);
+            var flights = await _flightSearchService.SearchAsync(normalized, cancellationToken);
+            allFlights.AddRange(flights);
         }
 
         var destinations = allFlights
@@ -82,30 +127,26 @@ public class FlightsController : ControllerBase
                 var meta = DestinationMeta.TryGetValue(g.Key, out var m)
                     ? m
                     : (City: g.Key, Country: "Unknown", Lat: 0.0, Lng: 0.0, Continent: "North America", Tags: new[] { "Culture" }, Temp: 70, Condition: "Clear");
-                return new
-                {
-                    code = g.Key,
-                    city = meta.City,
-                    country = meta.Country,
-                    lat = meta.Lat,
-                    lng = meta.Lng,
-                    cheapestPrice = min.TotalPrice,
-                    flightTime = min.Duration,
-                    weather = new { temp = meta.Temp, condition = meta.Condition },
-                    tags = meta.Tags,
-                    continent = meta.Continent
-                };
+                return new ExploreDestination(
+                    g.Key,
+                    meta.City,
+                    meta.Country,
+                    meta.Lat,
+                    meta.Lng,
+                    min.TotalPrice,
+                    min.Duration,
+                    meta.Temp,
+                    meta.Condition,
+                    meta.Tags,
+                    meta.Continent,
+                    origin
+                );
             })
-            .OrderBy(d => d.cheapestPrice)
+            .OrderBy(d => d.CheapestPrice)
             .ToList();
 
-        return Ok(new
-        {
-            destinations,
-            from = origin,
-            hydratedFrom = "serpapi",
-            resultCount = allFlights.Count
-        });
+        _cache.Set(cacheKey, destinations, ExploreCacheTtl);
+        return (destinations, false);
     }
 
     [HttpGet("{id}")]
@@ -154,21 +195,34 @@ public class FlightsController : ControllerBase
     }
 
     [HttpGet("deals")]
-    public async Task<ActionResult> GetDeals([FromQuery] string? airport, CancellationToken cancellationToken)
+    public async Task<ActionResult> GetDeals(CancellationToken cancellationToken)
     {
-        var origin = string.IsNullOrWhiteSpace(airport) ? "ATL" : airport.ToUpperInvariant();
-        var departDate = DateTime.UtcNow.AddDays(21).ToString("yyyy-MM-dd");
-        var targets = new[] { "LAX", "JFK", "ORD", "MIA", "DFW" };
-        var flights = new List<ApiFlightDto>();
+        var candidateOrigins = new[] { "ATL", "LAX", "JFK", "ORD", "DFW", "MIA", "SEA", "DEN", "BOS", "SFO" };
+        var merged = new Dictionary<string, ExploreDestination>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidateOrigins)
+        {
+            if (_cache.TryGetValue<List<ExploreDestination>>(ExploreCacheKeyPrefix + candidate, out var cached) && cached is not null)
+            {
+                foreach (var d in cached)
+                {
+                    if (!merged.TryGetValue(d.Code, out var existing) || d.CheapestPrice < existing.CheapestPrice)
+                    {
+                        merged[d.Code] = d;
+                    }
+                }
+            }
+        }
 
         try
         {
-            foreach (var target in targets)
+            if (merged.Count == 0)
             {
-                var dto = new FlightSearchDto(origin, target, departDate, null, 1, "economy");
-                var normalized = NormalizeSearchDto(dto);
-                var result = await _flightSearchService.SearchAsync(normalized, cancellationToken);
-                flights.AddRange(result);
+                var warmed = await GetExploreDestinationsCachedAsync("ATL", cancellationToken);
+                foreach (var d in warmed.Destinations)
+                {
+                    merged[d.Code] = d;
+                }
             }
         }
         catch (InvalidOperationException ex)
@@ -176,23 +230,13 @@ public class FlightsController : ControllerBase
             return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
         }
 
-        var top = flights.OrderBy(f => f.TotalPrice).Take(8).ToList();
+        var destinations = merged.Values
+            .OrderBy(d => d.CheapestPrice)
+            .Take(8)
+            .Select(ProjectDestination)
+            .ToList();
 
-        var deals = top.Select(f =>
-        {
-            var normalPrice = decimal.Round(f.TotalPrice * 1.22m, 2);
-            return new
-            {
-                route = $"{f.Origin}-{f.Destination}",
-                airline = f.Airline,
-                price = f.TotalPrice,
-                normalPrice,
-                savings = decimal.Round(normalPrice - f.TotalPrice, 2),
-                expiresIn = "24 hours"
-            };
-        }).ToList();
-
-        return Ok(new { deals, airport = origin });
+        return Ok(new { destinations, hydratedFrom = "cache-merge", resultCount = destinations.Count });
     }
 
     private static FlightSearchDto NormalizeSearchDto(FlightSearchDto dto)
@@ -249,6 +293,20 @@ public class FlightsController : ControllerBase
             };
         }).ToList();
     }
+
+    private sealed record ExploreDestination(
+        string Code,
+        string City,
+        string Country,
+        double Lat,
+        double Lng,
+        decimal CheapestPrice,
+        string FlightTime,
+        int Temp,
+        string Condition,
+        string[] Tags,
+        string Continent,
+        string Origin);
 
     private static readonly Dictionary<string, (string City, string Country, double Lat, double Lng, string Continent, string[] Tags, int Temp, string Condition)> DestinationMeta =
         new(StringComparer.OrdinalIgnoreCase)

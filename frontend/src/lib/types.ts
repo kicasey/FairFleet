@@ -97,6 +97,7 @@ export interface Destination {
   tags: string[];
   imageUrl?: string;
   continent: string;
+  origin?: string;
 }
 
 export interface FareClassMapping {
