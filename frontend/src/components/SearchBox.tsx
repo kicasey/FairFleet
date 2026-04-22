@@ -283,7 +283,18 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       return;
     }
 
-    const normalizedFrom = rawFrom || homeAirport || 'ATL';
+    const normalizedFrom = rawFrom || homeAirport;
+    if (!normalizedFrom) {
+      setSearchError('Please enter a departure airport.');
+      return;
+    }
+
+    // User has a home airport but no destination — show explore results instead
+    if (!rawTo && homeAirport) {
+      router.push(`/explore?from=${homeAirport}`);
+      return;
+    }
+
     let normalizedTo = rawTo || randomDestination(normalizedFrom);
     if (normalizedFrom === normalizedTo) {
       normalizedTo = randomDestination(normalizedFrom);

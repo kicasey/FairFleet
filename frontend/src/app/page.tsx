@@ -75,7 +75,7 @@ export default function Home() {
   const sectionHeading = homeAirport
     ? `Cheapest from ${homeAirport} right now`
     : 'Cheapest flights right now';
-  const searchOrigin = homeAirport ?? 'ATL';
+  const searchOrigin = homeAirport;
 
   return (
     <div className="min-h-screen bg-off">
@@ -137,7 +137,7 @@ export default function Home() {
           {deals.map((dest, i) => (
             <Link
               key={dest.code}
-              href={`/search?from=${dest.origin ?? searchOrigin}&to=${dest.code}`}
+              href={`/search?${(dest.origin ?? searchOrigin) ? `from=${dest.origin ?? searchOrigin}&` : ''}to=${dest.code}`}
               className="group rounded-xl overflow-hidden bg-paper border border-border hover:-translate-y-1 transition-transform duration-200 shadow-sm hover:shadow-md"
             >
               {/* Photo + gradient overlay */}

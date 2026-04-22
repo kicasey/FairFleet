@@ -114,11 +114,11 @@ function SearchResults() {
     };
   }, [fromParam, isLoaded, isSignedIn, getToken]);
 
-  const from = fromParam ?? homeAirport ?? 'ATL';
+  const from = fromParam ?? homeAirport ?? null;
   const rawTo = searchParams.get('to') ?? '';
   const rawDate = searchParams.get('date') ?? searchParams.get('dep') ?? '';
   const [fallbackTo] = useState(() => {
-    const pool = POPULAR_DESTINATIONS.filter((c) => c !== (fromParam ?? 'ATL'));
+    const pool = POPULAR_DESTINATIONS.filter((c) => c !== fromParam);
     return pool[Math.floor(Math.random() * pool.length)];
   });
   const to = rawTo || fallbackTo;
@@ -326,7 +326,7 @@ function SearchResults() {
   };
 
   const searchSummary = {
-    from,
+    from: from ?? '',
     to,
     date,
     passengers: `${passengers} pax`,
@@ -559,7 +559,17 @@ function SearchResults() {
             </div>
 
             {/* Flight cards */}
-            {loading ? (
+            {homeAirportResolved && !from ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Plane size={48} className="text-brand-light-blue mb-4" strokeWidth={1.5} />
+                <p className="font-display font-bold text-lg text-ink mb-1">
+                  Where are you flying from?
+                </p>
+                <p className="font-body text-sm text-muted max-w-sm">
+                  Use the search bar above to pick a departure airport and destination.
+                </p>
+              </div>
+            ) : loading ? (
               <div className="flex items-center justify-center py-20">
                 <p className="font-display text-muted text-sm animate-pulse">Searching flights...</p>
               </div>
