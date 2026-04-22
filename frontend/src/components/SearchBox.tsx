@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import { findAirport, getAirport } from '@/data/airports';
 import { airlines } from '@/data/airlines';
+import { apiFetch } from '@/lib/api';
 import type { Airport } from '@/lib/types';
+import { useAuth, useUser } from '@clerk/nextjs';
 
 interface SearchBoxProps {
   onSearch?: (params: SearchParams) => void;
@@ -197,8 +199,11 @@ function AirportInput({
 
 export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<SearchBoxProps>) {
   const router = useRouter();
+  const { getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useUser();
   const [activeTab, setActiveTab] = useState<'destination' | 'explore' | 'surprise'>('destination');
 
+  const [homeAirport, setHomeAirport] = useState<string | null>(null);
   const [fromCode, setFromCode] = useState('');
   const [fromDisplay, setFromDisplay] = useState('');
   const [toCode, setToCode] = useState('');
@@ -231,6 +236,35 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const profile = await apiFetch<{ homeAirportCode?: string }>('/user/profile', {}, token);
+        if (cancelled || !profile.homeAirportCode) return;
+        const code = profile.homeAirportCode.toUpperCase();
+        setHomeAirport(code);
+        setFromCode((current) => {
+          if (current) return current;
+          const airport = getAirport(code);
+          if (airport) {
+            setFromDisplay(`${airport.code} – ${airport.city}`);
+          } else {
+            setFromDisplay(code);
+          }
+          return code;
+        });
+      } catch (err) {
+        console.error('Failed to load home airport for SearchBox:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, getToken]);
+
   const toggleChip = useCallback((list: string[], item: string, setter: (v: string[]) => void) => {
     setter(list.includes(item) ? list.filter((i) => i !== item) : [...list, item]);
   }, []);
@@ -249,7 +283,7 @@ export default function SearchBox({ onSearch, onSurpriseMe, compact }: Readonly<
       return;
     }
 
-    const normalizedFrom = rawFrom || 'ATL';
+    const normalizedFrom = rawFrom || homeAirport || 'ATL';
     let normalizedTo = rawTo || randomDestination(normalizedFrom);
     if (normalizedFrom === normalizedTo) {
       normalizedTo = randomDestination(normalizedFrom);

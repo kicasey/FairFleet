@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, useUser } from '@clerk/nextjs';
 import { SlidersHorizontal, ArrowUpDown, Plane } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import FlightCard from '@/components/FlightCard';
@@ -80,12 +80,45 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 
 function SearchResults() {
   const { getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useUser();
   const searchParams = useSearchParams();
-  const from = searchParams.get('from') ?? 'ATL';
+  const fromParam = searchParams.get('from');
+  const [homeAirport, setHomeAirport] = useState<string | null>(null);
+  const [homeAirportResolved, setHomeAirportResolved] = useState(false);
+
+  useEffect(() => {
+    if (fromParam) {
+      setHomeAirportResolved(true);
+      return;
+    }
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setHomeAirportResolved(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const profile = await apiFetch<{ homeAirportCode?: string }>('/user/profile', {}, token);
+        if (cancelled) return;
+        if (profile.homeAirportCode) setHomeAirport(profile.homeAirportCode.toUpperCase());
+      } catch (err) {
+        console.error('Failed to load home airport for search:', err);
+      } finally {
+        if (!cancelled) setHomeAirportResolved(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromParam, isLoaded, isSignedIn, getToken]);
+
+  const from = fromParam ?? homeAirport ?? 'ATL';
   const rawTo = searchParams.get('to') ?? '';
   const rawDate = searchParams.get('date') ?? searchParams.get('dep') ?? '';
   const [fallbackTo] = useState(() => {
-    const pool = POPULAR_DESTINATIONS.filter((c) => c !== from);
+    const pool = POPULAR_DESTINATIONS.filter((c) => c !== (fromParam ?? 'ATL'));
     return pool[Math.floor(Math.random() * pool.length)];
   });
   const to = rawTo || fallbackTo;
@@ -109,6 +142,7 @@ function SearchResults() {
 
   useEffect(() => {
     if (!from || !to) return;
+    if (!homeAirportResolved) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetchFlights({
@@ -132,7 +166,7 @@ function SearchResults() {
       .then((res) => setFlights(res ?? []))
       .catch((err) => console.error('Failed to fetch flights:', err))
       .finally(() => setLoading(false));
-  }, [from, to, date, returnDate, roundTrip, flexibleDates, flexibleDays, cabin, passengers, children, bags, checkedBags, maxStops, airlines, departureTimeBuckets, maxLayoverMinutes]);
+  }, [homeAirportResolved, from, to, date, returnDate, roundTrip, flexibleDates, flexibleDays, cabin, passengers, children, bags, checkedBags, maxStops, airlines, departureTimeBuckets, maxLayoverMinutes]);
 
   const allAirlines = useMemo(
     () => [...new Set([...BASE_AIRLINES, ...flights.map((f) => f.airline)])].sort((a, b) => a.localeCompare(b)),
