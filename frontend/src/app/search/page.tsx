@@ -50,6 +50,14 @@ const BASE_AIRLINES = [
   'Alaska',
 ];
 
+const POPULAR_DESTINATIONS = ['LAX', 'JFK', 'MIA', 'ORD', 'DEN', 'SEA', 'BOS', 'LAS', 'SFO', 'DFW'];
+
+function tomorrowISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -74,8 +82,14 @@ function SearchResults() {
   const { getToken } = useAuth();
   const searchParams = useSearchParams();
   const from = searchParams.get('from') ?? 'ATL';
-  const to = searchParams.get('to') ?? '';
-  const date = searchParams.get('date') ?? searchParams.get('dep') ?? '';
+  const rawTo = searchParams.get('to') ?? '';
+  const rawDate = searchParams.get('date') ?? searchParams.get('dep') ?? '';
+  const [fallbackTo] = useState(() => {
+    const pool = POPULAR_DESTINATIONS.filter((c) => c !== from);
+    return pool[Math.floor(Math.random() * pool.length)];
+  });
+  const to = rawTo || fallbackTo;
+  const date = rawDate || tomorrowISO();
   const passengers = searchParams.get('passengers') ?? searchParams.get('adults') ?? '1';
   const cabin = searchParams.get('cabin') ?? 'economy';
   const bags = searchParams.get('bags') ?? '0 bags';
@@ -278,9 +292,9 @@ function SearchResults() {
   };
 
   const searchSummary = {
-    from: from || 'Any',
-    to: to || 'Anywhere',
-    date: date || 'Flexible',
+    from,
+    to,
+    date,
     passengers: `${passengers} pax`,
     cabin: cabin.replaceAll('_', ' ').replaceAll(/\b\w/g, (l) => l.toUpperCase()),
     bags,
