@@ -35,6 +35,7 @@ interface QuizFlowProps {
   onComplete?: (answers: QuizAnswer) => void;
   onClose?: () => void;
   inline?: boolean;
+  homeAirport?: string;
 }
 
 interface QuizOption {
@@ -175,7 +176,7 @@ const slideVariants = {
   }),
 };
 
-export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizFlowProps>) {
+export default function QuizFlow({ onComplete, onClose, inline, homeAirport = 'ATL' }: Readonly<QuizFlowProps>) {
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [answers, setAnswers] = useState<QuizAnswer>({});
@@ -183,10 +184,10 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
   const [destinations, setDestinations] = useState<Destination[]>([]);
 
   useEffect(() => {
-    fetchExploreDestinations('ATL')
+    fetchExploreDestinations(homeAirport)
       .then((data) => setDestinations(data))
       .catch((err) => console.error('Failed to load quiz destinations:', err));
-  }, []);
+  }, [homeAirport]);
 
   const currentQuestion = QUESTIONS[step];
   const progress = ((step + 1) / QUESTIONS.length) * 100;
@@ -296,7 +297,7 @@ export default function QuizFlow({ onComplete, onClose, inline }: Readonly<QuizF
                     <p className="text-[10px] font-body text-muted">{dest.flightTime} flight</p>
                   </div>
                   <Link
-                    href={`/search?from=ATL&to=${dest.code}&passengers=1&cabin=economy`}
+                    href={`/search?from=${homeAirport}&to=${dest.code}&passengers=1&cabin=economy`}
                     className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md"
                   >
                     <Plane className="h-3 w-3" />

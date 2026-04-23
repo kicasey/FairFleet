@@ -103,7 +103,18 @@ export default function ProfilePage() {
         const foldersData = await apiFetch<Folder[]>('/folders', {}, token);
         if (foldersData) setFolders(foldersData);
         const savedData = await apiFetch<SavedFlight[]>('/saved-flights', {}, token);
-        if (savedData) setSavedFlights(savedData);
+        if (savedData) {
+          setSavedFlights(savedData.map((sf) => {
+            if (sf.flightData && !sf.flight) {
+              try {
+                return { ...sf, flight: JSON.parse(sf.flightData) as Flight };
+              } catch {
+                return sf;
+              }
+            }
+            return sf;
+          }));
+        }
       } catch (err) {
         console.error('Failed to sync user:', err);
       }

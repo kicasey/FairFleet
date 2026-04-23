@@ -3,10 +3,12 @@
 import Navbar from '@/components/Navbar';
 import QuizFlow from '@/components/QuizFlow';
 import MapCursorEffect from '@/components/MapCursorEffect';
-import { fetchExploreDestinations, fetchFlights } from '@/lib/api';
+import { fetchExploreDestinations, fetchFlights, apiFetch } from '@/lib/api';
 import { getDestinationPhotoSync } from '@/lib/unsplash';
 import { Destination, Flight } from '@/lib/types';
+import { airports } from '@/data/airports';
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import {
   List,
   Sparkles,
@@ -60,7 +62,8 @@ const CONTINENT_POSITIONS: Record<
   Oceania: { center: [135, -25], zoom: 3 },
 };
 
-const ATL_COORDS: [number, number] = [-84.4277, 33.6407];
+const DEFAULT_AIRPORT = 'ATL';
+const DEFAULT_COORDS: [number, number] = [-84.4277, 33.6407];
 
 function getTomorrowDate(): string {
   const date = new Date();
@@ -132,6 +135,13 @@ function parseFlight(ft: string): number {
 }
 
 export default function ExplorePage() {
+  const { getToken } = useAuth();
+  const [homeAirport, setHomeAirport] = useState(DEFAULT_AIRPORT);
+  const homeCoords = useMemo((): [number, number] => {
+    const a = airports.find((x) => x.code === homeAirport);
+    return a ? [a.lng, a.lat] : DEFAULT_COORDS;
+  }, [homeAirport]);
+
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [view, setView] = useState<ViewMode>('map');
   const [dateFilter, setDateFilter] = useState('All Dates');
@@ -153,7 +163,21 @@ export default function ExplorePage() {
   });
 
   useEffect(() => {
-    fetchExploreDestinations('ATL')
+    async function loadHomeAirport() {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const profile = await apiFetch<{ homeAirportCode?: string }>('/user/profile', {}, token);
+        if (profile.homeAirportCode) setHomeAirport(profile.homeAirportCode);
+      } catch {
+        // stay with ATL default
+      }
+    }
+    loadHomeAirport();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchExploreDestinations(homeAirport)
       .then((data) =>
         setDestinations(
           data.map((d) => ({
@@ -165,7 +189,7 @@ export default function ExplorePage() {
         ),
       )
       .catch((err) => console.error('Failed to load explore destinations:', err));
-  }, []);
+  }, [homeAirport]);
 
   useEffect(() => {
     if (!selectedDest) {
@@ -179,7 +203,7 @@ export default function ExplorePage() {
     setSelectedDestFlightError(null);
 
     fetchFlights({
-      from: 'ATL',
+      from: homeAirport,
       to: selectedDest.code,
       date: getTomorrowDate(),
       cabinClass: 'economy',
@@ -191,7 +215,7 @@ export default function ExplorePage() {
         setSelectedDestFlightError(err instanceof Error ? err.message : 'Unable to load live flights.');
       })
       .finally(() => setIsLoadingSelectedDestFlights(false));
-  }, [selectedDest]);
+  }, [selectedDest, homeAirport]);
 
   const markerScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
   const labelScale = Math.max(0.4, Math.min(1.5, 1 / position.zoom));
@@ -392,13 +416,15 @@ export default function ExplorePage() {
             <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
               <div
                 ref={mapRef}
-                className="relative rounded-[14px] overflow-hidden border border-border"
+                className="relative rounded-[14px] border border-border"
                 style={{ background: '#DCE8F0', height: 460, cursor: 'none' }}
                 onClick={() => setSelectedDest(null)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setSelectedDest(null);
                 }}
               >
+                {/* Inner wrapper clips the map SVG to rounded corners without clipping the popup */}
+                <div className="absolute inset-0 rounded-[14px] overflow-hidden">
                 <ComposableMap
                   projection="geoMercator"
                   projectionConfig={{ scale: 140 }}
@@ -432,8 +458,8 @@ export default function ExplorePage() {
                       }
                     </Geographies>
 
-                    {/* ATL home pin */}
-                    <Marker coordinates={ATL_COORDS}>
+                    {/* Home airport pin */}
+                    <Marker coordinates={homeCoords}>
                       <g transform={`scale(${markerScale})`}>
                         <circle r={14} fill="rgba(124,208,146,0.15)" />
                         <circle
@@ -462,7 +488,7 @@ export default function ExplorePage() {
                             fontFamily: 'var(--font-display)',
                           }}
                         >
-                          ATL
+                          {homeAirport}
                         </text>
                       </g>
                     </Marker>
@@ -545,7 +571,9 @@ export default function ExplorePage() {
                   ))}
                 </div>
 
-                {/* Popup card with photo header */}
+                </div>{/* end inner overflow-hidden wrapper */}
+
+                {/* Popup card — outside overflow-hidden so it isn't clipped */}
                 <AnimatePresence>
                   {selectedDest && (
                     <motion.div
@@ -600,9 +628,10 @@ export default function ExplorePage() {
                           selectedDestFlights.length > 0 && (
                             <div className="space-y-1.5">
                               {selectedDestFlights.map((flight) => (
-                                <div
+                                <Link
                                   key={flight.id}
-                                  className="rounded-lg border border-subtle bg-off px-2 py-1.5 text-[10px] font-body text-ink"
+                                  href={`/search?from=${homeAirport}&to=${selectedDest.code}&date=${flight.departureDate}`}
+                                  className="block rounded-lg border border-subtle bg-off px-2 py-1.5 text-[10px] font-body text-ink hover:border-brand-blue/40 hover:bg-brand-blue/5 transition-colors"
                                 >
                                   <div className="flex items-center justify-between">
                                     <span className="font-semibold">{flight.airline}</span>
@@ -613,7 +642,7 @@ export default function ExplorePage() {
                                   <div className="text-muted">
                                     {flight.departureTime} to {flight.arrivalTime} · {flight.duration}
                                   </div>
-                                </div>
+                                </Link>
                               ))}
                             </div>
                           )}
@@ -622,7 +651,7 @@ export default function ExplorePage() {
                       {/* CTA */}
                       <div className="px-3 py-2 text-center border-t border-subtle">
                         <Link
-                          href={`/search?from=ATL&to=${selectedDest.code}`}
+                          href={`/search?from=${homeAirport}&to=${selectedDest.code}`}
                           className="text-brand-blue font-semibold text-[10px] hover:underline"
                         >
                           See all flights to {selectedDest.city} →
@@ -655,7 +684,7 @@ export default function ExplorePage() {
                 {recommended.map((dest) => (
                   <Link
                     key={dest.code}
-                    href={`/search?from=ATL&to=${dest.code}`}
+                    href={`/search?from=${homeAirport}&to=${dest.code}`}
                     className="shrink-0 w-56 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                   >
                     <div
@@ -735,7 +764,6 @@ export default function ExplorePage() {
                         <th className="text-left px-4 py-3 font-display font-bold text-xs text-muted uppercase tracking-wider">
                           Airlines
                         </th>
-                        <th className="px-4 py-3" />
                       </tr>
                     </thead>
                     <tbody>
@@ -743,7 +771,6 @@ export default function ExplorePage() {
                         const tier = priceTier(dest.cheapestPrice);
                         const tierText = TIER_TEXT_CLASS[tier];
                         const tierDot = TIER_DOT_CLASS[tier];
-                        const airlines = 'Live search';
                         const stopsLabel = 'Varies';
                         const rowBg = i % 2 === 0 ? 'bg-paper' : 'bg-off';
 
@@ -785,17 +812,12 @@ export default function ExplorePage() {
                               </span>
                             </td>
                             <td className="px-4 py-3.5">
-                              <span className="text-xs font-body text-muted">
-                                {airlines}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5">
                               <Link
-                                href={`/search?from=ATL&to=${dest.code}`}
-                                className="rounded-full bg-brand-blue px-3 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors inline-flex items-center gap-1"
+                                href={`/search?from=${homeAirport}&to=${dest.code}`}
+                                className="text-xs font-body text-brand-blue hover:text-brand-dark-blue hover:underline inline-flex items-center gap-1 transition-colors"
                               >
                                 <Plane className="h-3 w-3" />
-                                Flights
+                                See flights →
                               </Link>
                             </td>
                           </tr>
@@ -831,7 +853,7 @@ export default function ExplorePage() {
             transition={{ duration: 0.25 }}
           >
             <section className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8">
-              <QuizFlow inline onClose={() => setView('map')} />
+              <QuizFlow inline onClose={() => setView('map')} homeAirport={homeAirport} />
             </section>
           </motion.div>
         )}

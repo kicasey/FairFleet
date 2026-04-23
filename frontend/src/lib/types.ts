@@ -136,6 +136,7 @@ export interface LoyaltyStatus {
 export interface SavedFlight {
   id: number;
   flight?: Flight;
+  flightData?: string;
   route: string;
   airlineName?: string;
   airlineCode?: string;

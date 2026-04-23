@@ -59,6 +59,7 @@ public class SavedFlightsController : ControllerBase
                 f.PriceAlertEnabled,
                 f.AlertFrequency,
                 f.FolderId,
+                f.FlightData,
                 f.CreatedAt
             })
             .ToListAsync();
