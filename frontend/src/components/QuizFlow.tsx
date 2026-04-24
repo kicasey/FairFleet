@@ -1,35 +1,11 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Sparkles, X, Plane, RotateCcw, Send, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import {
-  Sun,
-  Cloud,
-  Snowflake,
-  Shuffle,
-  User,
-  Heart,
-  Users,
-  UsersRound,
-  Palmtree,
-  Mountain,
-  Building2,
-  TreePine,
-  Calendar,
-  CalendarDays,
-  CalendarRange,
-  Infinity as InfinityIcon,
-  DollarSign,
-  CalendarCheck,
-  Plane,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
 import { fetchExploreDestinations } from '@/lib/api';
 import type { Destination, QuizAnswer } from '@/lib/types';
-import type { LucideIcon } from 'lucide-react';
 
 interface QuizFlowProps {
   onComplete?: (answers: QuizAnswer) => void;
@@ -41,83 +17,81 @@ interface QuizFlowProps {
 interface QuizOption {
   id: string;
   label: string;
-  description: string;
-  icon: LucideIcon;
 }
 
 interface QuizQuestion {
   key: keyof QuizAnswer;
-  title: string;
-  subtitle: string;
+  prompt: string;
   options: QuizOption[];
+  ack: (choice: QuizOption) => string;
 }
 
 const QUESTIONS: QuizQuestion[] = [
   {
     key: 'weather',
-    title: 'What weather sounds perfect?',
-    subtitle: 'Pick the climate that makes you happiest.',
+    prompt: "First up — what kind of weather are you in the mood for?",
     options: [
-      { id: 'warm', label: 'Warm & Sunny', description: 'Beaches, sunshine, and blue skies', icon: Sun },
-      { id: 'mild', label: 'Mild & Temperate', description: 'Comfortable and pleasant year-round', icon: Cloud },
-      { id: 'cool', label: 'Cool & Crisp', description: 'Fresh mountain air and cozy vibes', icon: Snowflake },
-      { id: 'surprise', label: 'Surprise Me', description: 'Dealer\'s choice — any weather goes', icon: Shuffle },
+      { id: 'warm', label: 'Warm & sunny' },
+      { id: 'mild', label: 'Mild & temperate' },
+      { id: 'cool', label: 'Cool & crisp' },
+      { id: 'surprise', label: 'Surprise me' },
     ],
+    ack: (c) => `${c.label} — nice.`,
   },
   {
     key: 'companions',
-    title: 'Who\'s coming along?',
-    subtitle: 'Your travel crew shapes the trip.',
+    prompt: "Who's coming with you?",
     options: [
-      { id: 'solo', label: 'Solo', description: 'Just me, myself, and I', icon: User },
-      { id: 'couple', label: 'Couple', description: 'A romantic getaway for two', icon: Heart },
-      { id: 'family', label: 'Family', description: 'Bringing the kids along', icon: Users },
-      { id: 'group', label: 'Group', description: 'Friends or a larger party', icon: UsersRound },
+      { id: 'solo', label: 'Just me' },
+      { id: 'couple', label: 'Couple' },
+      { id: 'family', label: 'Family' },
+      { id: 'group', label: 'Group of friends' },
     ],
+    ack: (c) => `Got it — ${c.label.toLowerCase()}.`,
   },
   {
     key: 'vibe',
-    title: 'What\'s the vibe?',
-    subtitle: 'Choose the experience you\'re craving.',
+    prompt: "What vibe are you after?",
     options: [
-      { id: 'beach', label: 'Chill & Beach', description: 'Sand between your toes, zero stress', icon: Palmtree },
-      { id: 'adventure', label: 'Thrill & Adventure', description: 'Extreme sports, zip-lines, off-the-beaten-path', icon: Mountain },
-      { id: 'city', label: 'City & Culture', description: 'Museums, food scenes, nightlife, architecture', icon: Building2 },
-      { id: 'nature', label: 'Scenic & Outdoors', description: 'National parks, wildlife, gentle hikes, stargazing', icon: TreePine },
+      { id: 'beach', label: 'Chill & beach' },
+      { id: 'adventure', label: 'Adventure' },
+      { id: 'city', label: 'City & culture' },
+      { id: 'nature', label: 'Scenic & outdoors' },
     ],
+    ack: (c) => `${c.label} — love it.`,
   },
   {
     key: 'length',
-    title: 'How long is the trip?',
-    subtitle: 'From a quick escape to a long vacation.',
+    prompt: "How long is the trip?",
     options: [
-      { id: 'weekend', label: 'Weekend', description: '2-3 days, short and sweet', icon: Calendar },
-      { id: '1week', label: '1 Week', description: 'A solid week of exploration', icon: CalendarDays },
-      { id: '2weeks', label: '2 Weeks', description: 'A proper extended vacation', icon: CalendarRange },
-      { id: 'flexible', label: 'Flexible', description: 'No fixed timeline in mind', icon: InfinityIcon },
+      { id: 'weekend', label: 'Weekend' },
+      { id: '1week', label: '1 week' },
+      { id: '2weeks', label: '2 weeks' },
+      { id: 'flexible', label: 'Flexible' },
     ],
+    ack: (c) => `Cool, ${c.label.toLowerCase()} it is.`,
   },
   {
     key: 'budget',
-    title: 'What\'s your budget per person?',
-    subtitle: 'Flight cost only — we\'ll find the best deal.',
+    prompt: "What's your budget per person (flights only)?",
     options: [
-      { id: '0-300', label: '$0 – $300', description: 'Budget-friendly domestic flights', icon: DollarSign },
-      { id: '300-600', label: '$300 – $600', description: 'Mid-range with more options', icon: DollarSign },
-      { id: '600-1000', label: '$600 – $1,000', description: 'Premium routes and longer trips', icon: DollarSign },
-      { id: '1000+', label: '$1,000+', description: 'International and first-class territory', icon: DollarSign },
+      { id: '0-300', label: 'Under $300' },
+      { id: '300-600', label: '$300 – $600' },
+      { id: '600-1000', label: '$600 – $1,000' },
+      { id: '1000+', label: '$1,000+' },
     ],
+    ack: (c) => `Budget noted: ${c.label}.`,
   },
   {
     key: 'flexibility',
-    title: 'How flexible are your dates?',
-    subtitle: 'Flexibility often unlocks better prices.',
+    prompt: "Last one — how flexible are your dates?",
     options: [
-      { id: 'specific', label: 'Specific Dates', description: 'I know exactly when I\'m going', icon: CalendarCheck },
-      { id: 'flexible-3', label: 'Flexible ±3 Days', description: 'A few days of wiggle room', icon: CalendarDays },
-      { id: 'anytime-3mo', label: 'Anytime (3 Months)', description: 'Within the next three months', icon: CalendarRange },
-      { id: 'open', label: 'Totally Open', description: 'Whenever the price is right', icon: InfinityIcon },
+      { id: 'specific', label: 'Specific dates' },
+      { id: 'flexible-3', label: '±3 days' },
+      { id: 'anytime-3mo', label: 'Within 3 months' },
+      { id: 'open', label: 'Totally open' },
     ],
+    ack: () => `Perfect.`,
   },
 ];
 
@@ -144,44 +118,95 @@ const VIBE_TAGS: Record<string, string[]> = {
 
 function scoreDestination(dest: Destination, answers: QuizAnswer): number {
   let score = 0;
-
   if (answers.weather && answers.weather !== 'surprise') {
     const tags = WEATHER_TAGS[answers.weather] || [];
     if (tags.some((t) => dest.tags.includes(t))) score += 2;
   }
-
   if (answers.vibe) {
     const tags = VIBE_TAGS[answers.vibe] || [];
     if (tags.some((t) => dest.tags.includes(t))) score += 3;
   }
-
   if (answers.budget) {
     const [min, max] = BUDGET_RANGES[answers.budget] || [0, Infinity];
     if (dest.cheapestPrice >= min && dest.cheapestPrice <= max) score += 4;
     else if (dest.cheapestPrice < min + 100 || dest.cheapestPrice > max - 100) score += 1;
   }
-
   return score;
 }
 
-const slideVariants = {
-  enter: (direction: number) => ({
-    x: direction > 0 ? 200 : -200,
-    opacity: 0,
-  }),
-  center: { x: 0, opacity: 1 },
-  exit: (direction: number) => ({
-    x: direction > 0 ? -200 : 200,
-    opacity: 0,
-  }),
-};
+function pickMatches(answers: QuizAnswer, availableDestinations: Destination[]): Destination[] {
+  return [...availableDestinations]
+    .map((d) => ({ dest: d, score: scoreDestination(d, answers) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map((m) => m.dest);
+}
+
+type ChatMessage =
+  | { id: string; role: 'bot'; text: string }
+  | { id: string; role: 'user'; text: string }
+  | {
+      id: string;
+      role: 'results';
+      destinations: Destination[];
+      blurbs: Record<string, string>;
+    };
+
+type Phase = 'quiz' | 'freeform' | 'generating' | 'done';
+
+const INTRO_TEXT =
+  "Hi! I'm your FairFleet travel buddy. Answer a few quick questions and I'll use AI to match you with destinations.";
+
+const FREEFORM_PROMPT =
+  "Anything else I should know? Tell me in your own words, or hit Skip.";
+
+interface RecommendationResponse {
+  summary: string;
+  blurbs: Record<string, string>;
+}
+
+async function fetchRecommendations(
+  answers: QuizAnswer,
+  freeformNote: string | undefined,
+  dests: Destination[],
+): Promise<RecommendationResponse> {
+  const res = await fetch('/api/quiz-recommend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      answers,
+      freeformNote,
+      destinations: dests.map((d) => ({
+        code: d.code,
+        city: d.city,
+        country: d.country,
+        cheapestPrice: d.cheapestPrice,
+        flightTime: d.flightTime,
+        tags: d.tags,
+      })),
+    }),
+  });
+  if (!res.ok) throw new Error(`Recommendation request failed: ${res.status}`);
+  return (await res.json()) as RecommendationResponse;
+}
 
 export default function QuizFlow({ onComplete, onClose, inline, homeAirport = 'ATL' }: Readonly<QuizFlowProps>) {
-  const [step, setStep] = useState(0);
-  const [direction, setDirection] = useState(1);
-  const [answers, setAnswers] = useState<QuizAnswer>({});
-  const [showResults, setShowResults] = useState(false);
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { id: 'intro', role: 'bot', text: INTRO_TEXT },
+  ]);
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<QuizAnswer>({});
+  const [phase, setPhase] = useState<Phase>('quiz');
+  const [isTyping, setIsTyping] = useState(true);
+  const [freeformInput, setFreeformInput] = useState('');
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const currentQuestion = step < QUESTIONS.length ? QUESTIONS[step] : null;
+
+  const appendMessage = useCallback((msg: ChatMessage) => {
+    setMessages((prev) => [...prev, msg]);
+  }, []);
 
   useEffect(() => {
     fetchExploreDestinations(homeAirport)
@@ -189,299 +214,307 @@ export default function QuizFlow({ onComplete, onClose, inline, homeAirport = 'A
       .catch((err) => console.error('Failed to load quiz destinations:', err));
   }, [homeAirport]);
 
-  const currentQuestion = QUESTIONS[step];
-  const progress = ((step + 1) / QUESTIONS.length) * 100;
+  useEffect(() => {
+    if (phase !== 'quiz') return;
+    if (!currentQuestion) return;
+    setIsTyping(true);
+    const timer = setTimeout(() => {
+      setIsTyping(false);
+      appendMessage({
+        id: `q-${currentQuestion.key}`,
+        role: 'bot',
+        text: currentQuestion.prompt,
+      });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [step, currentQuestion, phase, appendMessage]);
 
-  const selectAnswer = useCallback((key: keyof QuizAnswer, value: string) => {
-    setAnswers((prev) => ({ ...prev, [key]: value }));
-  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages, isTyping, phase]);
 
-  function goNext() {
-    if (step < QUESTIONS.length - 1) {
-      setDirection(1);
-      setStep(step + 1);
-    } else {
-      setShowResults(true);
-      onComplete?.(answers);
+  async function finalizeWithAi(finalAnswers: QuizAnswer, note: string | undefined) {
+    const matches = pickMatches(finalAnswers, destinations);
+    setPhase('generating');
+    setIsTyping(true);
+    appendMessage({ id: 'gen-status', role: 'bot', text: "Thinking through your matches…" });
+
+    try {
+      const { summary, blurbs } = await fetchRecommendations(finalAnswers, note, matches);
+      appendMessage({ id: 'results-summary', role: 'bot', text: summary });
+      appendMessage({ id: 'results', role: 'results', destinations: matches, blurbs });
+    } catch (err) {
+      console.error(err);
+      const fallbackBlurbs: Record<string, string> = {};
+      for (const d of matches) {
+        fallbackBlurbs[d.code] =
+          `${d.city}, ${d.country} — from $${d.cheapestPrice}, about ${d.flightTime} in the air.`;
+      }
+      appendMessage({
+        id: 'results-summary',
+        role: 'bot',
+        text: "I couldn't reach the AI just now, but here are your best matches.",
+      });
+      appendMessage({ id: 'results', role: 'results', destinations: matches, blurbs: fallbackBlurbs });
+    } finally {
+      setIsTyping(false);
+      setPhase('done');
+      onComplete?.(finalAnswers);
     }
   }
 
-  function goBack() {
-    if (showResults) {
-      setShowResults(false);
-      return;
-    }
-    if (step > 0) {
-      setDirection(-1);
-      setStep(step - 1);
-    }
+  function handleSelect(option: QuizOption) {
+    if (!currentQuestion || isTyping || phase !== 'quiz') return;
+    const question = currentQuestion;
+    const nextAnswers = { ...answers, [question.key]: option.id };
+    setAnswers(nextAnswers);
+    appendMessage({ id: `a-${question.key}`, role: 'user', text: option.label });
+    setIsTyping(true);
+    setTimeout(() => {
+      appendMessage({ id: `ack-${question.key}`, role: 'bot', text: question.ack(option) });
+      const isLast = step === QUESTIONS.length - 1;
+      if (isLast) {
+        setTimeout(() => {
+          appendMessage({ id: 'freeform-prompt', role: 'bot', text: FREEFORM_PROMPT });
+          setIsTyping(false);
+          setPhase('freeform');
+        }, 500);
+      } else {
+        setStep(step + 1);
+      }
+    }, 650);
   }
 
-  const matchedDestinations = useMemo(() => {
-    return [...destinations]
-      .map((d) => ({ dest: d, score: scoreDestination(d, answers) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6)
-      .map((m) => m.dest);
-  }, [answers, destinations]);
-
-  const previewDestinations = matchedDestinations.slice(0, 4);
-  const answerKeys = Object.entries(answers) as [keyof QuizAnswer, string][];
-
-  const containerClass = inline
-    ? 'w-full'
-    : 'w-full max-w-4xl mx-auto';
-
-  /* ────── Results view ────── */
-  if (showResults) {
-    return (
-      <div className={containerClass}>
-        <div className="rounded-2xl bg-paper border border-border shadow-xl shadow-brand-dark-blue/5 p-6 sm:p-8">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <p className="font-display font-semibold uppercase text-xs tracking-widest text-muted mb-1">
-                Your Matches
-              </p>
-              <h2 className="font-display font-extrabold text-lg text-ink">
-                We found your perfect destinations
-              </h2>
-            </div>
-            {onClose && (
-              <button onClick={onClose} className="rounded-full p-2 text-muted hover:bg-off transition-colors">
-                <X className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-
-          {/* Answer chips */}
-          <div className="flex flex-wrap gap-2 mb-6">
-            {answerKeys.map(([key, value]) => (
-              <span
-                key={key}
-                className="rounded-full bg-brand-light-blue/20 border border-brand-blue/20 px-3 py-1 text-xs font-body font-semibold text-brand-dark-blue"
-              >
-                {value}
-              </span>
-            ))}
-          </div>
-
-          {/* Destination cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {matchedDestinations.map((dest) => (
-              <div
-                key={dest.code}
-                className="rounded-xl border border-border bg-off/50 p-4 hover:shadow-md hover:border-brand-blue/30 transition-all group"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="font-display font-bold text-sm text-ink">{dest.city}</h3>
-                    <p className="text-xs font-body text-muted">{dest.country}</p>
-                  </div>
-                  <span className="rounded-full bg-brand-dark-blue/10 px-2 py-0.5 font-display text-xs font-bold text-brand-dark-blue">
-                    {dest.code}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {dest.tags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-off px-2 py-0.5 text-[9px] font-body text-muted border border-border">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-display font-extrabold text-lg text-brand-dark-blue">
-                      ${dest.cheapestPrice}
-                    </p>
-                    <p className="text-[10px] font-body text-muted">{dest.flightTime} flight</p>
-                  </div>
-                  <Link
-                    href={`/search?from=${homeAirport}&to=${dest.code}&passengers=1&cabin=economy`}
-                    className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5 group-hover:shadow-md"
-                  >
-                    <Plane className="h-3 w-3" />
-                    View Flights
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Back button */}
-          <div className="mt-6 flex justify-start">
-            <button
-              onClick={goBack}
-              className="rounded-full border border-border px-5 py-2 text-sm font-body font-semibold text-muted hover:bg-off transition-colors flex items-center gap-1.5"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back to Quiz
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  function handleFreeformSend() {
+    if (phase !== 'freeform') return;
+    const note = freeformInput.trim();
+    if (!note) return;
+    appendMessage({ id: 'freeform-answer', role: 'user', text: note });
+    setFreeformInput('');
+    void finalizeWithAi(answers, note);
   }
 
-  /* ────── Quiz view ────── */
+  function handleFreeformSkip() {
+    if (phase !== 'freeform') return;
+    appendMessage({ id: 'freeform-skip', role: 'user', text: 'Skip' });
+    void finalizeWithAi(answers, undefined);
+  }
+
+  function handleRestart() {
+    setMessages([{ id: 'intro', role: 'bot', text: INTRO_TEXT }]);
+    setAnswers({});
+    setStep(0);
+    setFreeformInput('');
+    setPhase('quiz');
+    setIsTyping(true);
+  }
+
+  const containerClass = inline ? 'w-full max-w-2xl mx-auto' : 'w-full max-w-2xl mx-auto px-4';
+
+  const matchCount = messages.reduce(
+    (acc, m) => (m.role === 'results' ? m.destinations.length : acc),
+    0,
+  );
+
+  const statusLabel = (() => {
+    if (phase === 'generating') return 'Generating…';
+    if (phase === 'done') return 'Finished';
+    if (isTyping) return 'Typing…';
+    return 'Online';
+  })();
+
   return (
     <div className={containerClass}>
-      <div className="rounded-2xl bg-paper border border-border shadow-xl shadow-brand-dark-blue/5 overflow-hidden">
-        {/* Progress bar */}
-        <div className="h-1 bg-off">
-          <div
-            className="h-full rounded-r-full transition-all duration-500 ease-out"
-            style={{
-              width: `${progress}%`,
-              background: 'linear-gradient(90deg, #2875F1 0%, #6050E8 100%)',
-            }}
-          />
+      <div className="rounded-2xl bg-paper border border-border shadow-xl shadow-brand-dark-blue/5 overflow-hidden flex flex-col h-[620px]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-off/40">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-blue to-brand-purple">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <p className="font-display font-bold text-sm text-ink leading-tight">FairFleet Assistant</p>
+              <p className="font-body text-[11px] text-muted leading-tight">{statusLabel}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {phase === 'done' && (
+              <button
+                onClick={handleRestart}
+                className="rounded-full p-2 text-muted hover:bg-off transition-colors"
+                aria-label="Restart quiz"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="rounded-full p-2 text-muted hover:bg-off transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row">
-          {/* Main quiz panel */}
-          <div className="flex-1 p-6 sm:p-8">
-            {/* Close button + step indicator */}
-            <div className="flex items-center justify-between mb-6">
-              <p className="font-display font-semibold uppercase text-xs tracking-widest text-muted">
-                Question {step + 1} of {QUESTIONS.length}
-              </p>
-              {onClose && (
-                <button onClick={onClose} className="rounded-full p-2 text-muted hover:bg-off transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Animated question */}
-            <AnimatePresence mode="wait" custom={direction}>
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-paper">
+          <AnimatePresence initial={false}>
+            {messages.map((m) => (
               <motion.div
-                key={step}
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                key={m.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {/* Question text */}
-                <h2 className="font-display font-extrabold text-sm sm:text-base text-ink mb-1">
-                  {currentQuestion.title}
-                </h2>
-                <p className="text-muted text-sm font-body mb-6">{currentQuestion.subtitle}</p>
-
-                {/* 2×2 options grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  {currentQuestion.options.map((opt) => {
-                    const selected = answers[currentQuestion.key] === opt.id;
-                    const Icon = opt.icon;
-                    return (
-                      <button
-                        key={opt.id}
-                        onClick={() => selectAnswer(currentQuestion.key, opt.id)}
-                        className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all hover:shadow-sm ${
-                          selected
-                            ? 'bg-brand-light-purple/20 border-brand-purple shadow-sm'
-                            : 'bg-paper border-border hover:border-brand-blue/30'
-                        }`}
+                {m.role === 'results' ? (
+                  <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {m.destinations.map((dest) => (
+                      <div
+                        key={dest.code}
+                        className="rounded-xl border border-border bg-off/40 p-3 hover:shadow-sm hover:border-brand-blue/30 transition-all"
                       >
-                        <div
-                          className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                            selected ? 'bg-brand-blue/20' : 'bg-off'
-                          }`}
-                        >
-                          <Icon
-                            className={`h-4.5 w-4.5 ${
-                              selected ? 'text-brand-blue' : 'text-muted'
-                            }`}
-                          />
+                        <div className="flex items-start justify-between mb-1">
+                          <div>
+                            <h3 className="font-display font-bold text-sm text-ink leading-tight">{dest.city}</h3>
+                            <p className="text-[11px] font-body text-muted">{dest.country}</p>
+                          </div>
+                          <span className="rounded-full bg-brand-dark-blue/10 px-2 py-0.5 font-display text-[10px] font-bold text-brand-dark-blue">
+                            {dest.code}
+                          </span>
                         </div>
-                        <p className="font-display font-bold text-[9px] uppercase tracking-wide text-ink">
-                          {opt.label}
-                        </p>
-                        <p className="text-[9px] text-muted leading-snug">{opt.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Answer summary chips */}
-            {answerKeys.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-5 pt-4 border-t border-border">
-                {answerKeys.map(([key, value]) => {
-                  const q = QUESTIONS.find((qq) => qq.key === key);
-                  const opt = q?.options.find((o) => o.id === value);
-                  return (
-                    <span
-                      key={key}
-                      className="rounded-full bg-brand-light-pink px-2.5 py-0.5 text-[10px] font-body text-brand-dark-burgundy"
-                    >
-                      {opt?.label || value}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Navigation */}
-            <div className="flex items-center justify-between mt-6">
-              <button
-                onClick={goBack}
-                disabled={step === 0}
-                className="rounded-full border border-border px-5 py-2 text-sm font-body font-semibold text-muted hover:bg-off transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Back
-              </button>
-              <button
-                onClick={goNext}
-                disabled={!answers[currentQuestion.key]}
-                className="rounded-full bg-brand-blue px-6 py-2 text-sm font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-cta"
-              >
-                {step === QUESTIONS.length - 1 ? 'See Results' : 'Next'}
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Live preview side panel (desktop only) */}
-          <div className="hidden lg:block w-72 border-l border-border bg-off/50 p-5">
-            <p className="font-display font-semibold uppercase text-[10px] tracking-widest text-muted mb-4">
-              Live Preview
-            </p>
-            <div className="space-y-3">
-              {previewDestinations.map((dest) => (
-                <div
-                  key={dest.code}
-                  className="rounded-xl border border-border bg-paper p-3 hover:shadow-sm transition-shadow"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="font-display font-bold text-xs text-ink">{dest.city}</h4>
-                    <span className="font-display font-extrabold text-xs text-brand-dark-blue">
-                      ${dest.cheapestPrice}
-                    </span>
-                  </div>
-                  <p className="text-[10px] font-body text-muted mb-1.5">
-                    {dest.country} · {dest.flightTime}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {dest.tags.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-off px-1.5 py-0.5 text-[8px] font-body text-muted border border-border"
-                      >
-                        {tag}
-                      </span>
+                        {m.blurbs[dest.code] && (
+                          <p className="text-[11px] font-body text-muted leading-snug mt-1 mb-2">
+                            {m.blurbs[dest.code]}
+                          </p>
+                        )}
+                        <div className="flex items-end justify-between mt-2">
+                          <div>
+                            <p className="font-display font-extrabold text-base text-brand-dark-blue leading-none">
+                              ${dest.cheapestPrice}
+                            </p>
+                            <p className="text-[10px] font-body text-muted mt-1">{dest.flightTime} flight</p>
+                          </div>
+                          <Link
+                            href={`/search?from=${homeAirport}&to=${dest.code}&passengers=1&cabin=economy`}
+                            className="rounded-full bg-brand-blue px-3 py-1 text-[11px] font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1"
+                          >
+                            <Plane className="h-3 w-3" />
+                            View
+                          </Link>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
+                ) : (
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm font-body leading-snug whitespace-pre-wrap ${
+                      m.role === 'user'
+                        ? 'bg-brand-blue text-white rounded-br-sm'
+                        : 'bg-off text-ink rounded-bl-sm'
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          {isTyping && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex justify-start"
+            >
+              <div className="bg-off rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
+                <TypingDot delay={0} />
+                <TypingDot delay={0.15} />
+                <TypingDot delay={0.3} />
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Input area */}
+        <div className="border-t border-border bg-off/30 px-4 py-3 min-h-[72px] flex items-center">
+          {phase === 'quiz' && currentQuestion && !isTyping ? (
+            <div className="flex flex-wrap gap-2 w-full">
+              {currentQuestion.options.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => handleSelect(opt)}
+                  className="rounded-full border border-brand-blue/30 bg-paper px-4 py-1.5 text-sm font-body font-semibold text-brand-dark-blue hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-colors"
+                >
+                  {opt.label}
+                </button>
               ))}
             </div>
-          </div>
+          ) : phase === 'freeform' ? (
+            <div className="flex items-center gap-2 w-full">
+              <input
+                type="text"
+                value={freeformInput}
+                onChange={(e) => setFreeformInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleFreeformSend(); }}
+                placeholder="e.g. celebrating an anniversary, want good food…"
+                className="flex-1 rounded-full border border-border bg-paper px-4 py-2 text-sm font-body text-ink placeholder:text-muted focus:outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 transition-all"
+                autoFocus
+              />
+              <button
+                onClick={handleFreeformSkip}
+                className="rounded-full border border-border bg-paper px-4 py-2 text-sm font-body font-semibold text-muted hover:bg-off transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                onClick={handleFreeformSend}
+                disabled={!freeformInput.trim()}
+                className="rounded-full bg-brand-blue px-4 py-2 text-sm font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                aria-label="Send"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Send
+              </button>
+            </div>
+          ) : phase === 'generating' ? (
+            <div className="flex items-center gap-2 w-full text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm font-body">Crafting your personalized recommendations…</span>
+            </div>
+          ) : phase === 'done' ? (
+            <div className="flex items-center justify-between w-full">
+              <p className="text-xs font-body text-muted">
+                {matchCount} AI-personalized match{matchCount === 1 ? '' : 'es'}
+              </p>
+              <button
+                onClick={handleRestart}
+                className="rounded-full bg-brand-blue px-4 py-1.5 text-sm font-body font-semibold text-white hover:bg-brand-dark-blue transition-colors flex items-center gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Start over
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs font-body text-muted italic">Assistant is typing…</p>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function TypingDot({ delay }: Readonly<{ delay: number }>) {
+  return (
+    <motion.span
+      className="block h-1.5 w-1.5 rounded-full bg-muted"
+      animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }}
+      transition={{ duration: 0.9, repeat: Infinity, delay, ease: 'easeInOut' }}
+    />
   );
 }
